@@ -1,65 +1,90 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+import Image from "next/image";
+import Link from "next/link";
+import LoginButton from "@/components/LoginButton";
+import { useAuth } from "@/context/AuthContext";
+
+export default function HomePage() {
+	const { user, logout } = useAuth();
+
+	return (
+		<main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-100 px-6 py-12">
+			<div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(14,165,233,0.12),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(34,197,94,0.1),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(15,23,42,0.12),transparent_40%)]" />
+
+			<section className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white/90 p-8 shadow-xl backdrop-blur sm:p-10">
+				{!user ? (
+					<div className="space-y-6 text-center">
+						<span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+							Consola de Manufactura Avanzada
+						</span>
+
+						<h1 className="text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+							Plataforma Open Source para planificacion y colaboracion industrial
+						</h1>
+
+						<p className="mx-auto max-w-xl text-pretty text-sm text-slate-600 sm:text-base">
+							Inicia sesion con tu cuenta de Google para crear equipos privados, visualizar
+							cronogramas y tomar decisiones con herramientas de manufactura avanzada.
+						</p>
+
+						<div className="flex justify-center">
+							<LoginButton />
+						</div>
+					</div>
+				) : (
+					<div className="space-y-6 text-center">
+						<span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+							Sesion iniciada
+						</span>
+
+						<div className="flex justify-center">
+							<div className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-white shadow-lg ring-2 ring-slate-200">
+								{user.photoURL ? (
+									<Image
+										src={user.photoURL}
+										alt="Foto de perfil"
+										fill
+										sizes="96px"
+										className="object-cover"
+										unoptimized
+									/>
+								) : (
+									<div className="flex h-full w-full items-center justify-center bg-slate-200 text-2xl font-bold text-slate-700">
+										{(user.displayName || user.email || "U").charAt(0).toUpperCase()}
+									</div>
+								)}
+							</div>
+						</div>
+
+						<h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+							Bienvenido, {user.displayName || "Usuario"}
+						</h1>
+
+						<p className="text-sm text-slate-600 sm:text-base">
+							Tu espacio de trabajo esta listo. Continua al panel principal para gestionar
+							equipos, planes y analisis.
+						</p>
+
+						<div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+							<Link
+								href="/dashboard"
+								className="inline-flex min-w-52 items-center justify-center rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
+							>
+								Entrar al Dashboard
+							</Link>
+
+							<button
+								type="button"
+								onClick={logout}
+								className="inline-flex min-w-52 items-center justify-center rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+							>
+								Cerrar Sesion
+							</button>
+						</div>
+					</div>
+				)}
+			</section>
+		</main>
+	);
 }
