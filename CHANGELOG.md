@@ -1,5 +1,19 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Fix compatibilidad de dependencias para Vercel
+
+**Qué se hizo:**
+- Creado `.npmrc` con `legacy-peer-deps=true` para que npm ignore el conflicto de peer dependencies entre `gantt-task-react@0.3.9` (requiere React 18) y el proyecto (React 19).
+
+**Archivos modificados:**
+`.npmrc` (nuevo).
+
+**Decisión técnica:**
+`legacy-peer-deps` es la solución estándar cuando una dependencia no ha actualizado su `peerDependencies` pero funciona correctamente con la versión más nueva. Vercel usa npm por defecto y fallaba en `npm install` sin esta flag.
+
+**Pendiente:**
+- Desplegar en Vercel configurando las 7 variables de entorno de Firebase en el panel.
+
 ## [2026-03-31] — Firestore Security Rules por memberIds
 
 **Qué se hizo:**
