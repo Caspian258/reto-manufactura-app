@@ -60,7 +60,10 @@ export async function createTeam(
   if (!userId) throw new Error("Usuario inválido para crear equipo.");
 
   // Código de invitación de 6 caracteres
-  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const inviteCode = Array.from({ length: 6 }, () =>
+    chars[Math.floor(Math.random() * chars.length)]
+  ).join("");
 
   const payload = {
     name: cleanedTeamName,
