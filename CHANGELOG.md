@@ -1,5 +1,24 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Firestore Security Rules por memberIds
+
+**Qué se hizo:**
+- Creado `firestore.rules` con reglas de seguridad para la colección `teams` y su subcolección `tasks`.
+- Un usuario solo puede leer o escribir un equipo si su `uid` está en `memberIds` del documento.
+- Las tareas heredan la misma restricción mediante `get()` al documento padre del equipo.
+- Creado `firebase.json` apuntando a `firestore.rules` para el despliegue con Firebase CLI.
+
+**Archivos modificados:**
+`firestore.rules` (nuevo), `firebase.json` (nuevo).
+
+**Decisión técnica:**
+Las tareas usan `get()` sobre el equipo padre en lugar de duplicar `memberIds` en cada tarea, para mantener una sola fuente de verdad. Esto implica un read adicional por operación en las reglas, aceptable a escala universitaria.
+
+**Pendiente:**
+- Desplegar las reglas con `firebase deploy --only firestore:rules` (requiere Firebase CLI autenticado).
+- PERT dinámico calculado desde tareas de Firestore.
+- Integración Canvas LMS (Fase 2 del roadmap).
+
 ## [2026-03-31] — Formulario para crear tareas en equipo
 
 **Qué se hizo:**
