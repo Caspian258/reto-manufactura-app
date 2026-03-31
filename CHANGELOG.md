@@ -1,5 +1,18 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Despliegue en Vercel
+
+**Qué se hizo:**
+- App desplegada exitosamente en Vercel.
+- URL de producción: https://reto-manufactura-app.vercel.app/
+
+**Pendiente crítico:**
+- Las Firestore Security Rules están en el repo (`firestore.rules`) pero **aún no activas en producción**. Activarlas con:
+  ```
+  firebase deploy --only firestore:rules
+  ```
+  Hasta que se ejecute ese comando, Firestore opera con las reglas por defecto (abiertas o cerradas según la configuración inicial del proyecto Firebase).
+
 ## [2026-03-31] — Fix compatibilidad de dependencias para Vercel
 
 **Qué se hizo:**
