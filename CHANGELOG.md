@@ -1,5 +1,24 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Gestión de miembros: borrar equipo, salir y expulsar
+
+**Qué se hizo:**
+- **Borrar equipo (admin):** botón visible solo para admins, con diálogo de confirmación inline. Borra todas las tareas de la subcolección antes de borrar el documento del equipo. Redirige a `/dashboard/equipos`.
+- **Salir del equipo (miembro):** visible para no-admins. Si el usuario es el único admin, lanza error `"Debes nombrar otro admin antes de salir"` sin ejecutar cambios.
+- **Ver miembros:** nueva pestaña "Miembros" en el panel del equipo. Lista nombre y rol de cada miembro. El admin ve botón "Expulsar" junto a cada miembro que no sea él mismo.
+- **Funciones en `lib/firestore.ts`:** `deleteTeam`, `leaveTeam`, `removeMember`.
+
+**Archivos modificados:**
+`app/dashboard/equipos/[id]/page.tsx`, `lib/firestore.ts`.
+
+**Decisión técnica:**
+`deleteTeam` borra las tareas de la subcolección manualmente con `Promise.all` antes de borrar el documento padre, ya que Firestore no propaga borrados en cascada automáticamente.
+`leaveTeam` y `removeMember` usan `arrayRemove` de Firestore para mantener en sync tanto `members` (array de objetos) como `memberIds` (array de strings).
+
+**Pendiente:**
+- PERT dinámico calculado desde tareas de Firestore.
+- Integración Canvas LMS (Fase 2 del roadmap).
+
 ## [2026-03-31] — Despliegue en Vercel
 
 **Qué se hizo:**
