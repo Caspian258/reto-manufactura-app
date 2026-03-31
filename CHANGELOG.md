@@ -1,5 +1,31 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Corrección de rutas y bootstrap de Firebase
+
+**Qué se hizo:**
+- Renombrados todos los archivos de ruta al nombre que exige Next.js App Router (`page.tsx`, `layout.tsx`). El refactor anterior los había dejado con nombres arbitrarios (`app_page.tsx`, `dashboard_layout.tsx`, etc.) que Next.js ignoraba silenciosamente, dejando la app completamente sin rutas.
+- Creado `lib/firebase.ts` que inicializa la app Firebase con variables de entorno y exporta `db` y `auth`. El archivo faltaba y bloqueaba la compilación.
+- Corregida la generación de `inviteCode` en `lib/firestore.ts`: ahora toma 6 caracteres de un alfabeto fijo (`A-Z0-9`) garantizando longitud exacta, en lugar de usar `Math.random().toString(36)` que podía producir strings más cortos.
+
+**Archivos modificados:**
+`app/layout.tsx` (era `app_layout.tsx`), `app/page.tsx` (era `app_page.tsx`),
+`app/dashboard/layout.tsx`, `app/dashboard/page.tsx`,
+`app/dashboard/equipos/page.tsx`, `app/dashboard/equipos/[id]/page.tsx`,
+`app/dashboard/herramientas/gantt/page.tsx`,
+`app/dashboard/herramientas/pert/page.tsx`,
+`app/dashboard/herramientas/ishikawa/page.tsx`,
+`lib/firebase.ts` (nuevo), `lib/firestore.ts`.
+
+**Decisión técnica:**
+Se usó `git mv` para conservar el historial de cada archivo en el renombrado.
+`lib/firebase.ts` usa el patrón singleton (`getApps().length ? getApp() : initializeApp(...)`) para evitar reinicializaciones en hot-reload de Next.js.
+
+**Pendiente:**
+- Firestore Security Rules que restrinjan lectura/escritura por `memberIds`.
+- Formulario para crear tareas desde la UI del equipo.
+- PERT dinámico calculado desde tareas de Firestore.
+- Integración Canvas LMS (Fase 2 del roadmap).
+
 ## [2026-03-31] — Reestructuración base del proyecto
 
 **Qué se hizo:**
