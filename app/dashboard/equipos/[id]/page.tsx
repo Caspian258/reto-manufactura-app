@@ -15,7 +15,8 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import type { Edge, Node } from "@xyflow/react";
-import { getTeamTasks, Task } from "@/lib/firestore";
+import { getTeamTasks, createTask, Task } from "@/lib/firestore";
+import { useAuth } from "@/context/AuthContext";
 
 const Gantt = dynamic(
   () => import("gantt-task-react").then((mod) => mod.Gantt as ComponentType<any>),
@@ -34,7 +35,6 @@ const nodeStyle = {
   padding: 8,
 };
 
-// PERT nodes y edges por defecto (se actualizarán con los datos reales en futuras iteraciones)
 const initialNodes: Node[] = [
   { id: "n1", position: { x: 30, y: 180 }, data: { label: "Inicio" }, style: nodeStyle },
   { id: "n2", position: { x: 260, y: 180 }, data: { label: "Diseño" }, style: nodeStyle },
@@ -50,6 +50,7 @@ const initialEdges: Edge[] = [
 export default function TeamControlPage() {
   const params = useParams<{ id: string }>();
   const teamId = params?.id ?? "";
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TeamTab>("Gantt");
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -57,17 +58,63 @@ export default function TeamControlPage() {
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
-  useEffect(() => {
+  // Formulario nueva tarea
+  const [formOpen, setFormOpen] = useState(false);
+  const [taskName, setTaskName] = useState("");
+  const [taskStart, setTaskStart] = useState("");
+  const [taskEnd, setTaskEnd] = useState("");
+  const [taskProgress, setTaskProgress] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const loadTasks = async () => {
     if (!teamId) return;
-    getTeamTasks(teamId)
-      .then(setTasks)
-      .finally(() => setTasksLoading(false));
+    setTasksLoading(true);
+    try {
+      const fetched = await getTeamTasks(teamId);
+      setTasks(fetched);
+    } finally {
+      setTasksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTasks();
   }, [teamId]);
 
-  // Convertir tareas de Firestore al formato de gantt-task-react
+  const handleCreateTask = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    if (!user?.uid) { setFormError("Debes iniciar sesión."); return; }
+    if (!taskName.trim()) { setFormError("El nombre es obligatorio."); return; }
+    if (!taskStart || !taskEnd) { setFormError("Las fechas son obligatorias."); return; }
+
+    const start = new Date(taskStart);
+    const end = new Date(taskEnd);
+    if (end <= start) { setFormError("La fecha de fin debe ser posterior a la de inicio."); return; }
+
+    try {
+      setFormError("");
+      setIsSubmitting(true);
+      await createTask(
+        teamId,
+        { name: taskName.trim(), start, end, progress: taskProgress, dependencies: [], createdBy: user.uid },
+        user.uid
+      );
+      setTaskName("");
+      setTaskStart("");
+      setTaskEnd("");
+      setTaskProgress(0);
+      setFormOpen(false);
+      await loadTasks();
+    } catch {
+      setFormError("No fue posible crear la tarea.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const ganttTasks = useMemo<GanttTask[]>(() => {
     if (tasks.length === 0) {
-      // Tareas de ejemplo mientras no hay datos en Firestore
       const now = new Date();
       const y = now.getFullYear();
       const m = now.getMonth();
@@ -75,7 +122,6 @@ export default function TeamControlPage() {
         { id: "demo1", name: "Sin tareas aún — crea una", start: new Date(y, m, 1), end: new Date(y, m, 5), type: "task", progress: 0 },
       ];
     }
-
     return tasks.map((t) => ({
       id: t.id,
       name: t.name,
@@ -97,6 +143,92 @@ export default function TeamControlPage() {
           Panel de Control del Equipo
         </h1>
       </header>
+
+      {/* Formulario nueva tarea */}
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <button
+          type="button"
+          onClick={() => { setFormOpen((v) => !v); setFormError(""); }}
+          className="flex w-full items-center gap-2 px-6 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 rounded-2xl"
+        >
+          <span className="text-lg leading-none text-indigo-600">＋</span>
+          Nueva tarea
+          <span className={`ml-auto text-slate-400 transition-transform ${formOpen ? "rotate-180" : ""}`}>▾</span>
+        </button>
+
+        {formOpen && (
+          <form onSubmit={handleCreateTask} className="border-t border-slate-100 px-6 pb-6 pt-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
+                  Nombre de la tarea
+                </label>
+                <input
+                  type="text"
+                  value={taskName}
+                  onChange={(e) => setTaskName(e.target.value)}
+                  placeholder="Ej. Diseño de circuito"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
+                  Fecha de inicio
+                </label>
+                <input
+                  type="date"
+                  value={taskStart}
+                  onChange={(e) => setTaskStart(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
+                  Fecha de fin
+                </label>
+                <input
+                  type="date"
+                  value={taskEnd}
+                  onChange={(e) => setTaskEnd(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
+                  Progreso inicial: <span className="text-slate-700">{taskProgress}%</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={taskProgress}
+                  onChange={(e) => setTaskProgress(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
+                >
+                  {isSubmitting ? "Guardando..." : "Agregar tarea"}
+                </button>
+              </div>
+            </div>
+
+            {formError && (
+              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {formError}
+              </p>
+            )}
+          </form>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {/* Tabs */}
