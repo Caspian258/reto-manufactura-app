@@ -3,7 +3,7 @@
 import "gantt-task-react/dist/index.css";
 import "@xyflow/react/dist/style.css";
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import type { Task as GanttTask } from "gantt-task-react";
@@ -15,7 +15,17 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import type { Edge, Node } from "@xyflow/react";
-import { getTeamTasks, createTask, Task } from "@/lib/firestore";
+import {
+  getTeamTasks,
+  createTask,
+  deleteTeam,
+  leaveTeam,
+  removeMember,
+  Task,
+  Team,
+  TeamMember,
+} from "@/lib/firestore";
+import { getUserTeams } from "@/lib/firestore";
 import { useAuth } from "@/context/AuthContext";
 
 const Gantt = dynamic(
@@ -23,8 +33,8 @@ const Gantt = dynamic(
   { ssr: false }
 );
 
-type TeamTab = "Gantt" | "PERT" | "Ishikawa";
-const tabs: TeamTab[] = ["Gantt", "PERT", "Ishikawa"];
+type TeamTab = "Gantt" | "PERT" | "Ishikawa" | "Miembros";
+const tabs: TeamTab[] = ["Gantt", "PERT", "Ishikawa", "Miembros"];
 
 const nodeStyle = {
   border: "1px solid #4f46e5",
@@ -50,9 +60,11 @@ const initialEdges: Edge[] = [
 export default function TeamControlPage() {
   const params = useParams<{ id: string }>();
   const teamId = params?.id ?? "";
+  const router = useRouter();
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TeamTab>("Gantt");
+  const [team, setTeam] = useState<Team | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
@@ -67,31 +79,44 @@ export default function TeamControlPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const loadTasks = async () => {
-    if (!teamId) return;
+  // Acciones de equipo
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const loadData = async () => {
+    if (!teamId || !user?.uid) return;
     setTasksLoading(true);
     try {
-      const fetched = await getTeamTasks(teamId);
-      setTasks(fetched);
+      const [fetchedTasks, fetchedTeams] = await Promise.all([
+        getTeamTasks(teamId),
+        getUserTeams(user.uid),
+      ]);
+      setTasks(fetchedTasks);
+      setTeam(fetchedTeams.find((t) => t.id === teamId) ?? null);
     } finally {
       setTasksLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTasks();
-  }, [teamId]);
+    loadData();
+  }, [teamId, user?.uid]);
 
+  const currentMember: TeamMember | undefined = team?.members.find(
+    (m) => m.uid === user?.uid
+  );
+  const isAdmin = currentMember?.role === "admin";
+
+  // Crear tarea
   const handleCreateTask = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!user?.uid) { setFormError("Debes iniciar sesión."); return; }
     if (!taskName.trim()) { setFormError("El nombre es obligatorio."); return; }
     if (!taskStart || !taskEnd) { setFormError("Las fechas son obligatorias."); return; }
-
     const start = new Date(taskStart);
     const end = new Date(taskEnd);
     if (end <= start) { setFormError("La fecha de fin debe ser posterior a la de inicio."); return; }
-
     try {
       setFormError("");
       setIsSubmitting(true);
@@ -100,16 +125,57 @@ export default function TeamControlPage() {
         { name: taskName.trim(), start, end, progress: taskProgress, dependencies: [], createdBy: user.uid },
         user.uid
       );
-      setTaskName("");
-      setTaskStart("");
-      setTaskEnd("");
-      setTaskProgress(0);
+      setTaskName(""); setTaskStart(""); setTaskEnd(""); setTaskProgress(0);
       setFormOpen(false);
-      await loadTasks();
+      await loadData();
     } catch {
       setFormError("No fue posible crear la tarea.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Borrar equipo
+  const handleDeleteTeam = async () => {
+    try {
+      setActionBusy(true);
+      setActionError("");
+      await deleteTeam(teamId);
+      router.replace("/dashboard/equipos");
+    } catch {
+      setActionError("No fue posible borrar el equipo.");
+      setConfirmDelete(false);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Salir del equipo
+  const handleLeave = async () => {
+    if (!user?.uid) return;
+    try {
+      setActionBusy(true);
+      setActionError("");
+      await leaveTeam(teamId, user.uid);
+      router.replace("/dashboard/equipos");
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "No fue posible salir del equipo.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Expulsar miembro
+  const handleRemoveMember = async (targetUid: string) => {
+    try {
+      setActionBusy(true);
+      setActionError("");
+      await removeMember(teamId, targetUid);
+      await loadData();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "No fue posible expulsar al miembro.");
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -135,13 +201,68 @@ export default function TeamControlPage() {
 
   return (
     <main className="space-y-6">
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
-          Equipo · {teamId}
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-          Panel de Control del Equipo
-        </h1>
+      {/* Header */}
+      <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+            Equipo · {team?.name ?? teamId}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+            Panel de Control del Equipo
+          </h1>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {isAdmin && !confirmDelete && (
+            <button
+              type="button"
+              onClick={() => { setConfirmDelete(true); setActionError(""); }}
+              disabled={actionBusy}
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
+            >
+              Borrar equipo
+            </button>
+          )}
+
+          {isAdmin && confirmDelete && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">¿Confirmar borrado?</span>
+              <button
+                type="button"
+                onClick={handleDeleteTeam}
+                disabled={actionBusy}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionBusy ? "Borrando..." : "Sí, borrar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={actionBusy}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={handleLeave}
+              disabled={actionBusy}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              {actionBusy ? "Saliendo..." : "Salir del equipo"}
+            </button>
+          )}
+        </div>
+
+        {actionError && (
+          <p className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {actionError}
+          </p>
+        )}
       </header>
 
       {/* Formulario nueva tarea */}
@@ -149,7 +270,7 @@ export default function TeamControlPage() {
         <button
           type="button"
           onClick={() => { setFormOpen((v) => !v); setFormError(""); }}
-          className="flex w-full items-center gap-2 px-6 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 rounded-2xl"
+          className="flex w-full items-center gap-2 rounded-2xl px-6 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
         >
           <span className="text-lg leading-none text-indigo-600">＋</span>
           Nueva tarea
@@ -160,9 +281,7 @@ export default function TeamControlPage() {
           <form onSubmit={handleCreateTask} className="border-t border-slate-100 px-6 pb-6 pt-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  Nombre de la tarea
-                </label>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Nombre de la tarea</label>
                 <input
                   type="text"
                   value={taskName}
@@ -171,11 +290,8 @@ export default function TeamControlPage() {
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </div>
-
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  Fecha de inicio
-                </label>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha de inicio</label>
                 <input
                   type="date"
                   value={taskStart}
@@ -183,11 +299,8 @@ export default function TeamControlPage() {
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </div>
-
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  Fecha de fin
-                </label>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha de fin</label>
                 <input
                   type="date"
                   value={taskEnd}
@@ -195,7 +308,6 @@ export default function TeamControlPage() {
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </div>
-
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-500">
                   Progreso inicial: <span className="text-slate-700">{taskProgress}%</span>
@@ -209,7 +321,6 @@ export default function TeamControlPage() {
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </div>
-
               <div className="flex items-end">
                 <button
                   type="submit"
@@ -220,7 +331,6 @@ export default function TeamControlPage() {
                 </button>
               </div>
             </div>
-
             {formError && (
               <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {formError}
@@ -230,8 +340,8 @@ export default function TeamControlPage() {
         )}
       </section>
 
+      {/* Tabs + contenido */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        {/* Tabs */}
         <div className="mb-6 flex flex-wrap gap-2">
           {tabs.map((tab) => (
             <button
@@ -292,11 +402,8 @@ export default function TeamControlPage() {
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-slate-300" />
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Causas
-                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Causas</span>
                 </div>
-
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {[
                     { categoria: "Máquina", causa: "Configuración incorrecta" },
@@ -312,19 +419,54 @@ export default function TeamControlPage() {
                   ))}
                 </div>
               </div>
-
               <div className="relative">
                 <div className="absolute -left-6 top-1/2 h-0 w-6 border-t-2 border-slate-400" />
                 <div className="rounded-xl border border-indigo-300 bg-indigo-50 p-5 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
-                    Efecto
-                  </p>
-                  <h3 className="mt-2 text-base font-semibold text-slate-900">
-                    Problema a analizar
-                  </h3>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">Efecto</p>
+                  <h3 className="mt-2 text-base font-semibold text-slate-900">Problema a analizar</h3>
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Miembros */}
+        {activeTab === "Miembros" && (
+          <div className="space-y-3">
+            {!team || team.members.length === 0 ? (
+              <p className="text-sm text-slate-500">No hay miembros cargados.</p>
+            ) : (
+              team.members.map((member) => (
+                <div
+                  key={member.uid}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{member.name}</p>
+                    <span
+                      className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        member.role === "admin"
+                          ? "bg-indigo-100 text-indigo-700"
+                          : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {member.role === "admin" ? "Admin" : "Miembro"}
+                    </span>
+                  </div>
+
+                  {isAdmin && member.uid !== user?.uid && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMember(member.uid)}
+                      disabled={actionBusy}
+                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
+                    >
+                      Expulsar
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         )}
       </section>
