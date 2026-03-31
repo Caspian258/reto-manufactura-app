@@ -1,5 +1,25 @@
 # Changelog — manufactura.app
 
+## [2026-03-31] — Formulario para crear tareas en equipo
+
+**Qué se hizo:**
+- Agregado formulario colapsable "＋ Nueva tarea" en `app/dashboard/equipos/[id]/page.tsx`, debajo del header del equipo.
+- El formulario recoge nombre, fecha de inicio, fecha de fin y progreso inicial (0-100).
+- Al hacer submit llama a `createTask()` de `lib/firestore.ts` y recarga el Gantt automáticamente.
+- Validaciones en cliente: nombre obligatorio, fechas obligatorias, fecha fin > fecha inicio.
+- Se evitó el tipo `FormEvent` (deprecado en React 19); se tipó el evento mínimamente con `{ preventDefault(): void }`.
+
+**Archivos modificados:**
+`app/dashboard/equipos/[id]/page.tsx`
+
+**Decisión técnica:**
+El formulario reutiliza `createTask()` existente en `lib/firestore.ts` sin modificaciones. El estado del Gantt se recarga con `loadTasks()` tras el submit exitoso para reflejar la nueva tarea sin recargar página.
+
+**Pendiente:**
+- Firestore Security Rules que restrinjan lectura/escritura por `memberIds`.
+- PERT dinámico calculado desde tareas de Firestore.
+- Integración Canvas LMS (Fase 2 del roadmap).
+
 ## [2026-03-31] — Corrección de rutas y bootstrap de Firebase
 
 **Qué se hizo:**
