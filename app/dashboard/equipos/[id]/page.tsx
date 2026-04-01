@@ -1,23 +1,16 @@
 "use client";
 
 import "gantt-task-react/dist/index.css";
-import "@xyflow/react/dist/style.css";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import type { Task as GanttTask } from "gantt-task-react";
 import {
-  Background,
-  Controls,
-  ReactFlow,
-  useEdgesState,
-  useNodesState,
-} from "@xyflow/react";
-import type { Edge, Node } from "@xyflow/react";
-import {
   getTeamTasks,
   createTask,
+  updateTask,
+  deleteTask,
   deleteTeam,
   leaveTeam,
   removeMember,
@@ -33,49 +26,75 @@ const Gantt = dynamic(
   { ssr: false }
 );
 
-type TeamTab = "Gantt" | "PERT" | "Ishikawa" | "Miembros";
-const tabs: TeamTab[] = ["Gantt", "PERT", "Ishikawa", "Miembros"];
+type TeamTab = "Tareas" | "Kanban" | "Gantt" | "Miembros";
+const tabs: TeamTab[] = ["Tareas", "Kanban", "Gantt", "Miembros"];
 
-const nodeStyle = {
-  border: "1px solid #4f46e5",
-  borderRadius: 12,
-  background: "#ffffff",
-  color: "#0f172a",
-  fontWeight: 600,
-  padding: 8,
+const priorityLabel: Record<Task["priority"], string> = {
+  high: "Alta",
+  medium: "Media",
+  low: "Baja",
+};
+const priorityColor: Record<Task["priority"], string> = {
+  high: "bg-red-100 text-red-700",
+  medium: "bg-amber-100 text-amber-700",
+  low: "bg-slate-100 text-slate-600",
+};
+const statusLabel: Record<Task["status"], string> = {
+  pending: "Pendiente",
+  in_progress: "En progreso",
+  completed: "Completada",
+};
+const statusColor: Record<Task["status"], string> = {
+  pending: "bg-slate-100 text-slate-600",
+  in_progress: "bg-blue-100 text-blue-700",
+  completed: "bg-emerald-100 text-emerald-700",
 };
 
-const initialNodes: Node[] = [
-  { id: "n1", position: { x: 30, y: 180 }, data: { label: "Inicio" }, style: nodeStyle },
-  { id: "n2", position: { x: 260, y: 180 }, data: { label: "Diseño" }, style: nodeStyle },
-  { id: "n3", position: { x: 490, y: 180 }, data: { label: "Desarrollo" }, style: nodeStyle },
-  { id: "n4", position: { x: 720, y: 180 }, data: { label: "Entrega" }, style: nodeStyle },
-];
-const initialEdges: Edge[] = [
-  { id: "e1", source: "n1", target: "n2", animated: true },
-  { id: "e2", source: "n2", target: "n3", animated: true },
-  { id: "e3", source: "n3", target: "n4", animated: true },
-];
+function daysRemaining(date: Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(date);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
 
-export default function TeamControlPage() {
+type TaskForm = {
+  name: string;
+  description: string;
+  priority: Task["priority"];
+  assignedTo: string;
+  assignedToName: string;
+  startDate: string;
+  dueDate: string;
+  progress: number;
+};
+
+const emptyForm: TaskForm = {
+  name: "",
+  description: "",
+  priority: "medium",
+  assignedTo: "",
+  assignedToName: "",
+  startDate: "",
+  dueDate: "",
+  progress: 0,
+};
+
+export default function TeamPage() {
   const params = useParams<{ id: string }>();
   const teamId = params?.id ?? "";
   const router = useRouter();
   const { user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<TeamTab>("Gantt");
+  const [activeTab, setActiveTab] = useState<TeamTab>("Tareas");
   const [team, setTeam] = useState<Team | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
-  // Formulario nueva tarea
+  // Formulario de tarea
   const [formOpen, setFormOpen] = useState(false);
-  const [taskName, setTaskName] = useState("");
-  const [taskStart, setTaskStart] = useState("");
-  const [taskEnd, setTaskEnd] = useState("");
-  const [taskProgress, setTaskProgress] = useState(0);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [form, setForm] = useState<TaskForm>(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -83,6 +102,9 @@ export default function TeamControlPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+
+  // Copiar código
+  const [copied, setCopied] = useState(false);
 
   const loadData = async () => {
     if (!teamId || !user?.uid) return;
@@ -108,34 +130,103 @@ export default function TeamControlPage() {
   );
   const isAdmin = currentMember?.role === "admin";
 
-  // Crear tarea
-  const handleCreateTask = async (e: { preventDefault(): void }) => {
+  // ── Formulario helpers ──
+
+  const openCreate = () => {
+    setEditingTaskId(null);
+    setForm(emptyForm);
+    setFormError("");
+    setFormOpen(true);
+  };
+
+  const openEdit = (task: Task) => {
+    setEditingTaskId(task.id);
+    const fmt = (d: Date) => d.toISOString().split("T")[0];
+    setForm({
+      name: task.name,
+      description: task.description,
+      priority: task.priority,
+      assignedTo: task.assignedTo,
+      assignedToName: task.assignedToName,
+      startDate: fmt(task.startDate),
+      dueDate: fmt(task.dueDate),
+      progress: task.progress,
+    });
+    setFormError("");
+    setFormOpen(true);
+  };
+
+  const setMember = (uid: string) => {
+    const member = team?.members.find((m) => m.uid === uid);
+    setForm((f) => ({
+      ...f,
+      assignedTo: uid,
+      assignedToName: member?.name ?? "",
+    }));
+  };
+
+  const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!user?.uid) { setFormError("Debes iniciar sesión."); return; }
-    if (!taskName.trim()) { setFormError("El nombre es obligatorio."); return; }
-    if (!taskStart || !taskEnd) { setFormError("Las fechas son obligatorias."); return; }
-    const start = new Date(taskStart);
-    const end = new Date(taskEnd);
-    if (end <= start) { setFormError("La fecha de fin debe ser posterior a la de inicio."); return; }
+    if (!form.name.trim()) { setFormError("El nombre es obligatorio."); return; }
+    if (!form.startDate || !form.dueDate) { setFormError("Las fechas son obligatorias."); return; }
+    const startDate = new Date(form.startDate);
+    const dueDate = new Date(form.dueDate);
+    if (dueDate < startDate) { setFormError("La fecha límite debe ser posterior al inicio."); return; }
+
     try {
       setFormError("");
       setIsSubmitting(true);
-      await createTask(
-        teamId,
-        { name: taskName.trim(), start, end, progress: taskProgress, dependencies: [], createdBy: user.uid },
-        user.uid
-      );
-      setTaskName(""); setTaskStart(""); setTaskEnd(""); setTaskProgress(0);
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        status: "pending" as const,
+        priority: form.priority,
+        assignedTo: form.assignedTo,
+        assignedToName: form.assignedToName,
+        startDate,
+        dueDate,
+        progress: form.progress,
+        createdBy: user.uid,
+      };
+
+      if (editingTaskId) {
+        await updateTask(teamId, editingTaskId, payload);
+      } else {
+        await createTask(teamId, payload, user.uid);
+      }
+
       setFormOpen(false);
+      setEditingTaskId(null);
+      setForm(emptyForm);
       await loadData();
     } catch {
-      setFormError("No fue posible crear la tarea.");
+      setFormError("No fue posible guardar la tarea.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Borrar equipo
+  const handleDelete = async (taskId: string) => {
+    try {
+      await deleteTask(teamId, taskId);
+      await loadData();
+    } catch {
+      setActionError("No fue posible borrar la tarea.");
+    }
+  };
+
+  const handleMoveStatus = async (task: Task, newStatus: Task["status"]) => {
+    try {
+      await updateTask(teamId, task.id, { status: newStatus });
+      await loadData();
+    } catch {
+      setActionError("No fue posible mover la tarea.");
+    }
+  };
+
+  // ── Acciones de equipo ──
+
   const handleDeleteTeam = async () => {
     try {
       setActionBusy(true);
@@ -150,7 +241,6 @@ export default function TeamControlPage() {
     }
   };
 
-  // Salir del equipo
   const handleLeave = async () => {
     if (!user?.uid) return;
     try {
@@ -165,7 +255,6 @@ export default function TeamControlPage() {
     }
   };
 
-  // Expulsar miembro
   const handleRemoveMember = async (targetUid: string) => {
     try {
       setActionBusy(true);
@@ -179,189 +268,353 @@ export default function TeamControlPage() {
     }
   };
 
+  const handleCopyCode = () => {
+    if (!team?.inviteCode) return;
+    navigator.clipboard.writeText(team.inviteCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  // ── Gantt data ──
+
   const ganttTasks = useMemo<GanttTask[]>(() => {
     if (tasks.length === 0) {
       const now = new Date();
       const y = now.getFullYear();
       const m = now.getMonth();
       return [
-        { id: "demo1", name: "Sin tareas aún — crea una", start: new Date(y, m, 1), end: new Date(y, m, 5), type: "task", progress: 0 },
+        { id: "demo1", name: "Sin tareas — crea una", start: new Date(y, m, 1), end: new Date(y, m, 5), type: "task", progress: 0 },
       ];
     }
     return tasks.map((t) => ({
       id: t.id,
       name: t.name,
-      start: t.start,
-      end: t.end,
+      start: t.startDate,
+      end: t.dueDate,
       type: "task" as const,
       progress: t.progress,
-      dependencies: t.dependencies,
+      dependencies: [],
     }));
   }, [tasks]);
+
+  // ── Kanban columns ──
+
+  const kanbanColumns: { key: Task["status"]; label: string }[] = [
+    { key: "pending", label: "Pendiente" },
+    { key: "in_progress", label: "En progreso" },
+    { key: "completed", label: "Completado" },
+  ];
+
+  const nextStatus: Record<Task["status"], Task["status"] | null> = {
+    pending: "in_progress",
+    in_progress: "completed",
+    completed: null,
+  };
+
+  const prevStatus: Record<Task["status"], Task["status"] | null> = {
+    pending: null,
+    in_progress: "pending",
+    completed: "in_progress",
+  };
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
   return (
     <main className="space-y-6">
       {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
-            Equipo · {team?.name ?? teamId}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-            Panel de Control del Equipo
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {isAdmin && !confirmDelete && (
-            <button
-              type="button"
-              onClick={() => { setConfirmDelete(true); setActionError(""); }}
-              disabled={actionBusy}
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
-            >
-              Borrar equipo
-            </button>
-          )}
-
-          {isAdmin && confirmDelete && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-600">¿Confirmar borrado?</span>
-              <button
-                type="button"
-                onClick={handleDeleteTeam}
-                disabled={actionBusy}
-                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
-              >
-                {actionBusy ? "Borrando..." : "Sí, borrar"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                disabled={actionBusy}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
-
-          {!isAdmin && (
-            <button
-              type="button"
-              onClick={handleLeave}
-              disabled={actionBusy}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              {actionBusy ? "Saliendo..." : "Salir del equipo"}
-            </button>
-          )}
-        </div>
+      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+          Equipo · {team?.name ?? teamId}
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+          Panel de Control
+        </h1>
 
         {actionError && (
-          <p className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {actionError}
           </p>
         )}
       </header>
 
-      {/* Formulario nueva tarea */}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <button
-          type="button"
-          onClick={() => { setFormOpen((v) => !v); setFormError(""); }}
-          className="flex w-full items-center gap-2 rounded-2xl px-6 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-        >
-          <span className="text-lg leading-none text-indigo-600">＋</span>
-          Nueva tarea
-          <span className={`ml-auto text-slate-400 transition-transform ${formOpen ? "rotate-180" : ""}`}>▾</span>
-        </button>
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              activeTab === tab
+                ? "bg-slate-900 text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-        {formOpen && (
-          <form onSubmit={handleCreateTask} className="border-t border-slate-100 px-6 pb-6 pt-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs font-semibold text-slate-500">Nombre de la tarea</label>
-                <input
-                  type="text"
-                  value={taskName}
-                  onChange={(e) => setTaskName(e.target.value)}
-                  placeholder="Ej. Diseño de circuito"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha de inicio</label>
-                <input
-                  type="date"
-                  value={taskStart}
-                  onChange={(e) => setTaskStart(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha de fin</label>
-                <input
-                  type="date"
-                  value={taskEnd}
-                  onChange={(e) => setTaskEnd(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  Progreso inicial: <span className="text-slate-700">{taskProgress}%</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={taskProgress}
-                  onChange={(e) => setTaskProgress(Math.min(100, Math.max(0, Number(e.target.value))))}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
-                >
-                  {isSubmitting ? "Guardando..." : "Agregar tarea"}
-                </button>
-              </div>
-            </div>
-            {formError && (
-              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {formError}
-              </p>
-            )}
-          </form>
-        )}
-      </section>
-
-      {/* Tabs + contenido */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex flex-wrap gap-2">
-          {tabs.map((tab) => (
+      {/* ── TAB: Tareas ── */}
+      {activeTab === "Tareas" && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">
+              {tasks.length} tarea{tasks.length !== 1 ? "s" : ""}
+            </h2>
             <button
-              key={tab}
               type="button"
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
+              onClick={formOpen ? () => { setFormOpen(false); setEditingTaskId(null); } : openCreate}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              {tab}
+              {formOpen ? "Cancelar" : "+ Nueva tarea"}
             </button>
-          ))}
-        </div>
+          </div>
 
-        {/* Gantt */}
-        {activeTab === "Gantt" && (
-          tasksLoading ? (
+          {/* Formulario crear/editar */}
+          {formOpen && (
+            <form
+              onSubmit={handleSubmit}
+              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4"
+            >
+              <h3 className="text-sm font-semibold text-slate-700">
+                {editingTaskId ? "Editar tarea" : "Nueva tarea"}
+              </h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Nombre *</label>
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Nombre de la tarea"
+                    className={inputClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Descripción</label>
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                    placeholder="Descripción opcional"
+                    rows={2}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Prioridad</label>
+                  <select
+                    value={form.priority}
+                    onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as Task["priority"] }))}
+                    className={inputClass}
+                  >
+                    <option value="high">Alta</option>
+                    <option value="medium">Media</option>
+                    <option value="low">Baja</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Responsable</label>
+                  <select
+                    value={form.assignedTo}
+                    onChange={(e) => setMember(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Sin asignar</option>
+                    {team?.members.map((m) => (
+                      <option key={m.uid} value={m.uid}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha inicio *</label>
+                  <input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Fecha límite *</label>
+                  <input
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">
+                    Progreso: {form.progress}%
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={form.progress}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value))) }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {isSubmitting ? "Guardando..." : editingTaskId ? "Guardar cambios" : "Crear tarea"}
+                  </button>
+                </div>
+              </div>
+              {formError && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {formError}
+                </p>
+              )}
+            </form>
+          )}
+
+          {/* Lista de tareas */}
+          {tasksLoading ? (
+            <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900" />
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+              No hay tareas. Crea la primera.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {tasks.map((task, i) => {
+                const days = daysRemaining(task.dueDate);
+                return (
+                  <div
+                    key={task.id}
+                    className={`flex flex-wrap items-center gap-3 px-5 py-4 ${
+                      i !== 0 ? "border-t border-slate-100" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-900">{task.name}</p>
+                      {task.description && (
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">{task.description}</p>
+                      )}
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {task.assignedToName || "Sin asignar"}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
+                      {priorityLabel[task.priority]}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[task.status]}`}>
+                      {statusLabel[task.status]}
+                    </span>
+                    <span className={`text-xs font-medium ${days < 0 ? "text-red-600" : days <= 2 ? "text-amber-600" : "text-slate-500"}`}>
+                      {task.dueDate.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                      {" "}({days < 0 ? `${Math.abs(days)}d vencida` : days === 0 ? "hoy" : `${days}d`})
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(task)}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(task.id)}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                      >
+                        Borrar
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── TAB: Kanban ── */}
+      {activeTab === "Kanban" && (
+        <section>
+          {tasksLoading ? (
+            <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {kanbanColumns.map((col) => {
+                const colTasks = tasks.filter((t) => t.status === col.key);
+                return (
+                  <div key={col.key} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 px-5 py-3.5">
+                      <h3 className="text-sm font-semibold text-slate-700">
+                        {col.label}{" "}
+                        <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                          {colTasks.length}
+                        </span>
+                      </h3>
+                    </div>
+                    <div className="space-y-2 p-3">
+                      {colTasks.length === 0 ? (
+                        <p className="py-4 text-center text-xs text-slate-400">Sin tareas</p>
+                      ) : (
+                        colTasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          >
+                            <p className="text-sm font-semibold text-slate-900">{task.name}</p>
+                            <p className="mt-1 text-xs text-slate-500">{task.assignedToName || "Sin asignar"}</p>
+                            <div className="mt-2 flex gap-1.5 flex-wrap">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
+                                {priorityLabel[task.priority]}
+                              </span>
+                              {prevStatus[task.status] && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveStatus(task, prevStatus[task.status]!)}
+                                  className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
+                                >
+                                  ← Atrás
+                                </button>
+                              )}
+                              {nextStatus[task.status] && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveStatus(task, nextStatus[task.status]!)}
+                                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                >
+                                  Avanzar →
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── TAB: Gantt ── */}
+      {activeTab === "Gantt" && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          {tasksLoading ? (
             <div className="flex h-64 items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900" />
             </div>
@@ -376,70 +629,45 @@ export default function TeamControlPage() {
                 listCellWidth="250px"
               />
             </div>
-          )
-        )}
+          )}
+        </section>
+      )}
 
-        {/* PERT */}
-        {activeTab === "PERT" && (
-          <div className="h-[500px] w-full overflow-hidden rounded-xl border border-slate-300 bg-slate-50">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              fitView
-            >
-              <Background />
-              <Controls />
-            </ReactFlow>
-          </div>
-        )}
-
-        {/* Ishikawa */}
-        {activeTab === "Ishikawa" && (
-          <div className="rounded-xl border border-slate-300 bg-slate-50 p-6">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_280px] lg:items-center">
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-px flex-1 bg-slate-300" />
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Causas</span>
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {[
-                    { categoria: "Máquina", causa: "Configuración incorrecta" },
-                    { categoria: "Método", causa: "Proceso no documentado" },
-                    { categoria: "Material", causa: "Especificación fuera de rango" },
-                    { categoria: "Mano de obra", causa: "Falta de capacitación" },
-                  ].map(({ categoria, causa }) => (
-                    <div key={categoria} className="relative rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="absolute -right-4 top-1/2 h-0 w-4 border-t-2 border-slate-300" />
-                      <p className="text-sm font-semibold text-indigo-700">{categoria}</p>
-                      <p className="mt-1 text-sm text-slate-700">{causa}</p>
-                    </div>
-                  ))}
-                </div>
+      {/* ── TAB: Miembros ── */}
+      {activeTab === "Miembros" && (
+        <section className="space-y-4">
+          {/* Código de invitación */}
+          {team?.inviteCode && (
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+              <div className="flex-1">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                  Código de invitación
+                </p>
+                <p className="mt-1 font-mono text-xl font-bold tracking-[0.2em] text-slate-900">
+                  {team.inviteCode}
+                </p>
               </div>
-              <div className="relative">
-                <div className="absolute -left-6 top-1/2 h-0 w-6 border-t-2 border-slate-400" />
-                <div className="rounded-xl border border-indigo-300 bg-indigo-50 p-5 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">Efecto</p>
-                  <h3 className="mt-2 text-base font-semibold text-slate-900">Problema a analizar</h3>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                {copied ? "Copiado" : "Copiar"}
+              </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Miembros */}
-        {activeTab === "Miembros" && (
-          <div className="space-y-3">
+          {/* Lista de miembros */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {!team || team.members.length === 0 ? (
-              <p className="text-sm text-slate-500">No hay miembros cargados.</p>
+              <p className="p-5 text-sm text-slate-500">No hay miembros cargados.</p>
             ) : (
-              team.members.map((member) => (
+              team.members.map((member, i) => (
                 <div
                   key={member.uid}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                  className={`flex items-center justify-between px-5 py-3.5 ${
+                    i !== 0 ? "border-t border-slate-100" : ""
+                  }`}
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{member.name}</p>
@@ -447,13 +675,12 @@ export default function TeamControlPage() {
                       className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
                         member.role === "admin"
                           ? "bg-indigo-100 text-indigo-700"
-                          : "bg-slate-200 text-slate-600"
+                          : "bg-slate-100 text-slate-600"
                       }`}
                     >
                       {member.role === "admin" ? "Admin" : "Miembro"}
                     </span>
                   </div>
-
                   {isAdmin && member.uid !== user?.uid && (
                     <button
                       type="button"
@@ -468,8 +695,59 @@ export default function TeamControlPage() {
               ))
             )}
           </div>
-        )}
-      </section>
+
+          {/* Acciones del equipo */}
+          <div className="flex flex-wrap gap-3">
+            {isAdmin && !confirmDelete && (
+              <button
+                type="button"
+                onClick={() => { setConfirmDelete(true); setActionError(""); }}
+                disabled={actionBusy}
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
+              >
+                Borrar equipo
+              </button>
+            )}
+            {isAdmin && confirmDelete && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600">¿Confirmar borrado?</span>
+                <button
+                  type="button"
+                  onClick={handleDeleteTeam}
+                  disabled={actionBusy}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                >
+                  {actionBusy ? "Borrando..." : "Sí, borrar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={actionBusy}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={handleLeave}
+                disabled={actionBusy}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {actionBusy ? "Saliendo..." : "Salir del equipo"}
+              </button>
+            )}
+          </div>
+
+          {actionError && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {actionError}
+            </p>
+          )}
+        </section>
+      )}
     </main>
   );
 }

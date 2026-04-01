@@ -40,11 +40,14 @@ export type Task = {
   id: string;
   teamId: string;
   name: string;
-  start: Date;
-  end: Date;
+  description: string;
+  status: "pending" | "in_progress" | "completed";
+  priority: "low" | "medium" | "high";
+  assignedTo: string;
+  assignedToName: string;
+  startDate: Date;
+  dueDate: Date;
   progress: number;
-  dependencies: string[];
-  assignedTo?: string;
   createdBy: string;
   createdAt?: unknown;
 };
@@ -62,7 +65,6 @@ export async function createTeam(
   if (!cleanedTeamName) throw new Error("El nombre del equipo es obligatorio.");
   if (!userId) throw new Error("Usuario inválido para crear equipo.");
 
-  // Código de invitación de 6 caracteres
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const inviteCode = Array.from({ length: 6 }, () =>
     chars[Math.floor(Math.random() * chars.length)]
@@ -136,61 +138,9 @@ export async function joinTeamByCode(
   return teamDoc.id;
 }
 
-// ─────────────────────────────────────────────
-// Tasks
-// ─────────────────────────────────────────────
-
-export async function getTeamTasks(teamId: string): Promise<Task[]> {
-  if (!teamId) return [];
-
-  const q = query(
-    collection(db, "teams", teamId, "tasks"),
-    orderBy("start", "asc")
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      teamId,
-      name: data.name ?? "Tarea sin nombre",
-      start: (data.start as Timestamp).toDate(),
-      end: (data.end as Timestamp).toDate(),
-      progress: data.progress ?? 0,
-      dependencies: Array.isArray(data.dependencies) ? data.dependencies : [],
-      assignedTo: data.assignedTo ?? "",
-      createdBy: data.createdBy ?? "",
-      createdAt: data.createdAt,
-    };
-  });
-}
-
-export async function createTask(
-  teamId: string,
-  task: Omit<Task, "id" | "teamId" | "createdAt">,
-  userId: string
-): Promise<string> {
-  if (!teamId || !userId) throw new Error("Datos inválidos para crear tarea.");
-
-  const payload = {
-    ...task,
-    createdBy: userId,
-    createdAt: serverTimestamp(),
-  };
-
-  const docRef = await addDoc(
-    collection(db, "teams", teamId, "tasks"),
-    payload
-  );
-  return docRef.id;
-}
-
 export async function deleteTeam(teamId: string): Promise<void> {
   if (!teamId) throw new Error("teamId requerido.");
 
-  // Borrar todas las tareas de la subcolección antes de borrar el equipo
   const tasksSnap = await getDocs(collection(db, "teams", teamId, "tasks"));
   await Promise.all(tasksSnap.docs.map((d) => deleteDoc(d.ref)));
 
@@ -208,12 +158,8 @@ export async function leaveTeam(teamId: string, userId: string): Promise<void> {
   const members = (data.members ?? []) as { uid: string; role: string }[];
   const admins = members.filter((m) => m.role === "admin");
 
-  const isLastAdmin =
-    admins.length === 1 && admins[0].uid === userId;
-
-  if (isLastAdmin) {
-    throw new Error("Debes nombrar otro admin antes de salir.");
-  }
+  const isLastAdmin = admins.length === 1 && admins[0].uid === userId;
+  if (isLastAdmin) throw new Error("Debes nombrar otro admin antes de salir.");
 
   const memberToRemove = members.find((m) => m.uid === userId);
   if (!memberToRemove) throw new Error("No eres miembro de este equipo.");
@@ -242,10 +188,73 @@ export async function removeMember(teamId: string, targetUid: string): Promise<v
   });
 }
 
-export async function updateTaskProgress(
+// ─────────────────────────────────────────────
+// Tasks
+// ─────────────────────────────────────────────
+
+function toDate(val: unknown): Date {
+  if (val instanceof Timestamp) return val.toDate();
+  if (val instanceof Date) return val;
+  return new Date();
+}
+
+export async function getTeamTasks(teamId: string): Promise<Task[]> {
+  if (!teamId) return [];
+
+  const q = query(
+    collection(db, "teams", teamId, "tasks"),
+    orderBy("dueDate", "asc")
+  );
+
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      teamId,
+      name: data.name ?? "Tarea sin nombre",
+      description: data.description ?? "",
+      status: (data.status as Task["status"]) ?? "pending",
+      priority: (data.priority as Task["priority"]) ?? "medium",
+      assignedTo: data.assignedTo ?? "",
+      assignedToName: data.assignedToName ?? "",
+      startDate: toDate(data.startDate),
+      dueDate: toDate(data.dueDate),
+      progress: data.progress ?? 0,
+      createdBy: data.createdBy ?? "",
+      createdAt: data.createdAt,
+    };
+  });
+}
+
+export async function createTask(
+  teamId: string,
+  task: Omit<Task, "id" | "teamId" | "createdAt">,
+  userId: string
+): Promise<string> {
+  if (!teamId || !userId) throw new Error("Datos inválidos para crear tarea.");
+
+  const payload = {
+    ...task,
+    createdBy: userId,
+    createdAt: serverTimestamp(),
+  };
+
+  const docRef = await addDoc(collection(db, "teams", teamId, "tasks"), payload);
+  return docRef.id;
+}
+
+export async function updateTask(
   teamId: string,
   taskId: string,
-  progress: number
+  data: Partial<Omit<Task, "id" | "teamId" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(doc(db, "teams", teamId, "tasks", taskId), { progress });
+  if (!teamId || !taskId) throw new Error("Datos inválidos para actualizar tarea.");
+  await updateDoc(doc(db, "teams", teamId, "tasks", taskId), data as Record<string, unknown>);
+}
+
+export async function deleteTask(teamId: string, taskId: string): Promise<void> {
+  if (!teamId || !taskId) throw new Error("Datos inválidos para borrar tarea.");
+  await deleteDoc(doc(db, "teams", teamId, "tasks", taskId));
 }

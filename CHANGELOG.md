@@ -1,5 +1,37 @@
 # Changelog — manufactura.app
 
+## [2026-04-01] — Refundación Fase 1: modelo de tareas y navegación
+
+**Qué se hizo:**
+- **Nuevo modelo de `Task`** en `lib/firestore.ts`: campos `status`, `priority`, `assignedTo`, `assignedToName`, `startDate`, `dueDate`, `description`. Se eliminó `start/end/dependencies` del modelo anterior.
+- **Nuevas funciones Firestore**: `updateTask(teamId, taskId, data)` y `deleteTask(teamId, taskId)`. Se eliminó `updateTaskProgress` (reemplazada por `updateTask`).
+- **Sidebar dinámico** en `layout.tsx`: sección "General" (Inicio, Mis tareas, Calendario) y sección "Equipos" (lista cargada desde Firestore + botón "Nuevo equipo").
+- **Dashboard rediseñado** (`app/dashboard/page.tsx`): 4 tarjetas de resumen (equipos, pendientes, en progreso, completadas esta semana), lista "Mis tareas próximas" (5 más cercanas), grid de equipos.
+- **Nueva página "Mis tareas"** (`app/dashboard/tareas/page.tsx`): todas las tareas del usuario con filtros por estado, prioridad y equipo.
+- **Nueva página "Calendario"** (`app/dashboard/calendario/page.tsx`): grid mensual con CSS puro, navegación anterior/siguiente, chips de prioridad por día, panel de tareas al hacer click en un día.
+- **Panel de equipo rediseñado** (`app/dashboard/equipos/[id]/page.tsx`): pestañas Tareas, Kanban, Gantt y Miembros. Kanban con columnas Pendiente/En progreso/Completado y botones para mover tareas. Gantt usa `startDate`/`dueDate`. Miembros incluye código de invitación con botón copiar.
+- **Eliminada carpeta** `app/dashboard/herramientas/` (gantt, pert, ishikawa) — las herramientas viven dentro de cada equipo.
+
+**Archivos modificados:**
+`lib/firestore.ts`, `app/dashboard/layout.tsx`, `app/dashboard/page.tsx`, `app/dashboard/equipos/[id]/page.tsx`.
+
+**Archivos creados:**
+`app/dashboard/tareas/page.tsx`, `app/dashboard/calendario/page.tsx`.
+
+**Archivos eliminados:**
+`app/dashboard/herramientas/gantt/page.tsx`, `app/dashboard/herramientas/pert/page.tsx`, `app/dashboard/herramientas/ishikawa/page.tsx`.
+
+**Decisión técnica:**
+El calendario se implementó con CSS Grid puro (sin librería externa) para mantener el bundle ligero y evitar dependencias no confirmadas con el orquestador. El Kanban usa botones de avance/retroceso en lugar de drag-and-drop para mantener el scope de la Fase 1.
+
+**Pendiente (Fase 2):**
+- Kanban drag-and-drop.
+- Carpetas/agrupaciones de tareas.
+- Comentarios en tareas.
+- Integración Canvas LMS.
+- PERT dinámico calculado desde tareas de Firestore.
+- Notificaciones de vencimiento.
+
 ## [2026-03-31] — Gestión de miembros: borrar equipo, salir y expulsar
 
 **Qué se hizo:**

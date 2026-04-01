@@ -4,13 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { getUserTeams, Team } from "@/lib/firestore";
 
-const navItems = [
+const generalNav = [
   { label: "Inicio", href: "/dashboard" },
-  { label: "Equipos", href: "/dashboard/equipos" },
-  { label: "Gantt", href: "/dashboard/herramientas/gantt" },
-  { label: "PERT", href: "/dashboard/herramientas/pert" },
-  { label: "Ishikawa", href: "/dashboard/herramientas/ishikawa" },
+  { label: "Mis tareas", href: "/dashboard/tareas" },
+  { label: "Calendario", href: "/dashboard/calendario" },
 ];
 
 export default function DashboardLayout({
@@ -22,6 +21,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { user, loading, logout } = useAuth();
   const [isHydrated, setIsHydrated] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -31,6 +32,14 @@ export default function DashboardLayout({
     if (!isHydrated || loading) return;
     if (!user) router.replace("/");
   }, [isHydrated, loading, user, router]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    setTeamsLoading(true);
+    getUserTeams(user.uid)
+      .then(setTeams)
+      .finally(() => setTeamsLoading(false));
+  }, [user?.uid]);
 
   if (!isHydrated || loading) {
     return (
@@ -58,9 +67,13 @@ export default function DashboardLayout({
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-5">
-          <ul className="space-y-1">
-            {navItems.map((item) => {
+        <nav className="flex-1 overflow-y-auto px-3 py-5">
+          {/* Sección General */}
+          <p className="mb-2 px-4 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+            General
+          </p>
+          <ul className="mb-6 space-y-1">
+            {generalNav.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <li key={item.href}>
@@ -78,9 +91,51 @@ export default function DashboardLayout({
               );
             })}
           </ul>
+
+          {/* Sección Equipos */}
+          <p className="mb-2 px-4 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+            Equipos
+          </p>
+          <ul className="space-y-1">
+            {teamsLoading ? (
+              <li className="px-4 py-2">
+                <div className="h-4 w-32 animate-pulse rounded bg-slate-800" />
+              </li>
+            ) : teams.length === 0 ? (
+              <li className="px-4 py-2 text-xs text-slate-600">Sin equipos aún</li>
+            ) : (
+              teams.map((team) => {
+                const href = `/dashboard/equipos/${team.id}`;
+                const isActive = pathname === href || pathname.startsWith(href + "/");
+                return (
+                  <li key={team.id}>
+                    <Link
+                      href={href}
+                      className={`block truncate rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      {team.name}
+                    </Link>
+                  </li>
+                );
+              })
+            )}
+            <li>
+              <Link
+                href="/dashboard/equipos"
+                className="mt-1 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-indigo-400 transition-colors hover:bg-slate-800 hover:text-indigo-300"
+              >
+                <span className="text-base leading-none">+</span>
+                Nuevo equipo
+              </Link>
+            </li>
+          </ul>
         </nav>
 
-        {/* Usuario en fondo de sidebar */}
+        {/* Usuario al fondo */}
         <div className="border-t border-slate-800 px-4 py-4">
           <p className="truncate text-xs text-slate-400">
             {user.displayName || user.email}
