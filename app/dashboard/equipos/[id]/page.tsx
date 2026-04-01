@@ -25,9 +25,13 @@ import {
   deleteTeam,
   leaveTeam,
   removeMember,
+  getTaskComments,
+  addComment,
+  deleteComment,
   Task,
   Team,
   TeamMember,
+  Comment,
 } from "@/lib/firestore";
 import { getUserTeams } from "@/lib/firestore";
 import { useAuth } from "@/context/AuthContext";
@@ -67,6 +71,31 @@ function daysRemaining(date: Date): number {
   const due = new Date(date);
   due.setHours(0, 0, 0, 0);
   return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+function relativeTime(createdAt: unknown): string {
+  if (!createdAt) return "";
+  let date: Date | null = null;
+  if (createdAt instanceof Date) {
+    date = createdAt;
+  } else if (
+    typeof createdAt === "object" &&
+    createdAt !== null &&
+    "toDate" in createdAt &&
+    typeof (createdAt as { toDate: unknown }).toDate === "function"
+  ) {
+    date = (createdAt as { toDate: () => Date }).toDate();
+  }
+  if (!date) return "";
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60_000);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  if (mins < 1) return "hace un momento";
+  if (mins < 60) return `hace ${mins} min`;
+  if (hours < 24) return `hace ${hours} h`;
+  if (days === 1) return "hace 1 día";
+  return `hace ${days} días`;
 }
 
 // ── Kanban sub-components ──
@@ -194,6 +223,13 @@ export default function TeamPage() {
 
   // Copiar código
   const [copied, setCopied] = useState(false);
+
+  // Comentarios
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [commentsByTask, setCommentsByTask] = useState<Record<string, Comment[]>>({});
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentInput, setCommentInput] = useState("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   // Drag-and-drop
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
@@ -385,6 +421,50 @@ export default function TeamPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  // ── Comentarios ──
+
+  const loadComments = async (taskId: string) => {
+    setCommentsLoading(true);
+    try {
+      const comments = await getTaskComments(teamId, taskId);
+      setCommentsByTask((prev) => ({ ...prev, [taskId]: comments }));
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const handleToggleTask = (taskId: string) => {
+    if (expandedTaskId === taskId) {
+      setExpandedTaskId(null);
+    } else {
+      setCommentInput("");
+      setExpandedTaskId(taskId);
+      loadComments(taskId);
+    }
+  };
+
+  const handleAddComment = async (taskId: string) => {
+    if (!user || !commentInput.trim()) return;
+    try {
+      setIsSubmittingComment(true);
+      await addComment(teamId, taskId, {
+        authorId: user.uid,
+        authorName: user.displayName || user.email || "Usuario",
+        authorPhoto: user.photoURL ?? "",
+        content: commentInput.trim(),
+      });
+      setCommentInput("");
+      await loadComments(taskId);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (taskId: string, commentId: string) => {
+    await deleteComment(teamId, taskId, commentId);
+    await loadComments(taskId);
   };
 
   // ── Gantt data ──
@@ -599,53 +679,151 @@ export default function TeamPage() {
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               {tasks.map((task, i) => {
                 const days = daysRemaining(task.dueDate);
+                const isExpanded = expandedTaskId === task.id;
+                const taskComments = commentsByTask[task.id] ?? [];
                 return (
-                  <div
-                    key={task.id}
-                    className={`flex flex-wrap items-center gap-3 px-5 py-4 ${
-                      i !== 0 ? "border-t border-slate-100" : ""
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-900">{task.name}</p>
-                      {task.description && (
-                        <p className="mt-0.5 truncate text-xs text-slate-500">{task.description}</p>
-                      )}
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {task.assignedToName || "Sin asignar"}
-                      </p>
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
-                      {priorityLabel[task.priority]}
-                    </span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[task.status]}`}>
-                      {statusLabel[task.status]}
-                    </span>
-                    <span
-                      className={`text-xs font-medium ${
-                        days < 0 ? "text-red-600" : days <= 2 ? "text-amber-600" : "text-slate-500"
-                      }`}
+                  <div key={task.id} className={i !== 0 ? "border-t border-slate-100" : ""}>
+                    {/* Fila principal — clickable para abrir acordeón */}
+                    <div
+                      className="flex cursor-pointer flex-wrap items-center gap-3 px-5 py-4 transition hover:bg-slate-50"
+                      onClick={() => handleToggleTask(task.id)}
                     >
-                      {task.dueDate.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                      {" "}
-                      ({days < 0 ? `${Math.abs(days)}d vencida` : days === 0 ? "hoy" : `${days}d`})
-                    </span>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(task)}
-                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-slate-900">{task.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {task.assignedToName || "Sin asignar"}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
+                        {priorityLabel[task.priority]}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[task.status]}`}>
+                        {statusLabel[task.status]}
+                      </span>
+                      <span
+                        className={`text-xs font-medium ${
+                          days < 0 ? "text-red-600" : days <= 2 ? "text-amber-600" : "text-slate-500"
+                        }`}
                       >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                        {task.dueDate.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                        {" "}
+                        ({days < 0 ? `${Math.abs(days)}d vencida` : days === 0 ? "hoy" : `${days}d`})
+                      </span>
+                      {/* Botones editar/borrar — stopPropagation para no abrir el acordeón */}
+                      <div
+                        className="flex gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Borrar
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(task)}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                        >
+                          Borrar
+                        </button>
+                      </div>
+                      <span className="text-xs text-slate-400">{isExpanded ? "▲" : "▼"}</span>
                     </div>
+
+                    {/* Panel de detalle — acordeón */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-100 bg-slate-50 px-5 py-5 space-y-4">
+                        {/* Descripción */}
+                        {task.description && (
+                          <p className="text-sm text-slate-700">{task.description}</p>
+                        )}
+
+                        {/* Comentarios */}
+                        <div>
+                          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
+                            Comentarios
+                          </p>
+
+                          {commentsLoading ? (
+                            <div className="flex items-center gap-2 py-3 text-xs text-slate-400">
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                              Cargando...
+                            </div>
+                          ) : taskComments.length === 0 ? (
+                            <p className="py-2 text-xs text-slate-400">
+                              Sin comentarios todavía.
+                            </p>
+                          ) : (
+                            <div className="space-y-3">
+                              {taskComments.map((comment) => (
+                                <div key={comment.id} className="flex gap-3">
+                                  {/* Avatar */}
+                                  {comment.authorPhoto ? (
+                                    <img
+                                      src={comment.authorPhoto}
+                                      alt={comment.authorName}
+                                      className="h-8 w-8 shrink-0 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                                      {comment.authorName.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="flex-1">
+                                    <div className="flex items-baseline gap-2">
+                                      <span className="text-xs font-semibold text-slate-800">
+                                        {comment.authorName}
+                                      </span>
+                                      <span className="text-xs text-slate-400">
+                                        {relativeTime(comment.createdAt)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-0.5 text-sm text-slate-700">{comment.content}</p>
+                                  </div>
+                                  {comment.authorId === user?.uid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteComment(task.id, comment.id)}
+                                      className="shrink-0 self-start text-xs text-slate-400 transition hover:text-red-500"
+                                      title="Borrar comentario"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Input nuevo comentario */}
+                          <div className="mt-4 flex gap-2">
+                            <input
+                              type="text"
+                              value={commentInput}
+                              onChange={(e) => setCommentInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleAddComment(task.id);
+                                }
+                              }}
+                              placeholder="Escribe un comentario..."
+                              className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddComment(task.id)}
+                              disabled={isSubmittingComment || !commentInput.trim()}
+                              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
+                            >
+                              {isSubmittingComment ? "..." : "Comentar"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

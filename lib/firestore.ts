@@ -258,3 +258,70 @@ export async function deleteTask(teamId: string, taskId: string): Promise<void> 
   if (!teamId || !taskId) throw new Error("Datos inválidos para borrar tarea.");
   await deleteDoc(doc(db, "teams", teamId, "tasks", taskId));
 }
+
+// ─────────────────────────────────────────────
+// Comments
+// ─────────────────────────────────────────────
+
+export type Comment = {
+  id: string;
+  taskId: string;
+  authorId: string;
+  authorName: string;
+  authorPhoto?: string;
+  content: string;
+  createdAt?: unknown;
+};
+
+export async function getTaskComments(
+  teamId: string,
+  taskId: string
+): Promise<Comment[]> {
+  if (!teamId || !taskId) return [];
+
+  const q = query(
+    collection(db, "teams", teamId, "tasks", taskId, "comments"),
+    orderBy("createdAt", "asc")
+  );
+
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      taskId,
+      authorId: data.authorId ?? "",
+      authorName: data.authorName ?? "",
+      authorPhoto: data.authorPhoto ?? "",
+      content: data.content ?? "",
+      createdAt: data.createdAt,
+    };
+  });
+}
+
+export async function addComment(
+  teamId: string,
+  taskId: string,
+  comment: Omit<Comment, "id" | "taskId" | "createdAt">
+): Promise<string> {
+  if (!teamId || !taskId) throw new Error("Datos inválidos para agregar comentario.");
+
+  const docRef = await addDoc(
+    collection(db, "teams", teamId, "tasks", taskId, "comments"),
+    { ...comment, taskId, createdAt: serverTimestamp() }
+  );
+  return docRef.id;
+}
+
+export async function deleteComment(
+  teamId: string,
+  taskId: string,
+  commentId: string
+): Promise<void> {
+  if (!teamId || !taskId || !commentId)
+    throw new Error("Datos inválidos para borrar comentario.");
+  await deleteDoc(
+    doc(db, "teams", teamId, "tasks", taskId, "comments", commentId)
+  );
+}

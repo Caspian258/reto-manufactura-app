@@ -1,5 +1,29 @@
 # Changelog — manufactura.app
 
+## [2026-04-01] — Fase 3: Comentarios en tareas
+
+**Qué se hizo:**
+- **Tipo `Comment`** en `lib/firestore.ts` con campos `id`, `taskId`, `authorId`, `authorName`, `authorPhoto`, `content`, `createdAt`.
+- **Funciones Firestore**: `getTaskComments(teamId, taskId)` (orden asc por `createdAt`), `addComment(teamId, taskId, comment)` (con `serverTimestamp()`), `deleteComment(teamId, taskId, commentId)`.
+- **Subcolección**: `teams/{teamId}/tasks/{taskId}/comments`.
+- **Firestore Security Rules** actualizadas: miembros pueden leer y crear; solo el autor puede borrar su propio comentario. Deployleadas con `firebase deploy --only firestore:rules`.
+- **Panel de detalle (acordeón)** en la pestaña "Tareas": click en una tarea expande un panel debajo con descripción y sección de comentarios. Solo una tarea puede estar expandida a la vez.
+- **Avatar**: si `authorPhoto` está disponible muestra `<img>`, de lo contrario un círculo con la inicial del nombre.
+- **Tiempo relativo**: "hace un momento", "hace X min", "hace X h", "hace X días" — implementado sin librería externa.
+- **Input de comentario**: acepta Enter para enviar. Botón "Comentar" deshabilitado si el input está vacío o enviando. Botón "✕" para borrar comentarios propios.
+- **Botones Editar/Borrar** tienen `stopPropagation` para no abrir el acordeón al hacer click en ellos.
+
+**Archivos modificados:**
+`lib/firestore.ts`, `firestore.rules`, `app/dashboard/equipos/[id]/page.tsx`.
+
+**Decisión técnica:**
+El tiempo relativo se implementó sin librería (ej. `date-fns`) para no agregar dependencias no confirmadas con el orquestador. El acordeón usa estado local (`expandedTaskId`) con carga lazy de comentarios al abrir — no precarga todas las subcolecciones al montar.
+
+**Pendiente (Fase 4+):**
+- Integración Canvas LMS.
+- PERT dinámico calculado desde tareas de Firestore.
+- Notificaciones de vencimiento.
+
 ## [2026-04-01] — Fase 2: Kanban drag-and-drop con @dnd-kit
 
 **Qué se hizo:**
