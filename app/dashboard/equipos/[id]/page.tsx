@@ -7,6 +7,17 @@ import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import type { Task as GanttTask } from "gantt-task-react";
 import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
   getTeamTasks,
   createTask,
   updateTask,
@@ -58,6 +69,82 @@ function daysRemaining(date: Date): number {
   return Math.round((due.getTime() - today.getTime()) / 86_400_000);
 }
 
+// ── Kanban sub-components ──
+
+function KanbanCard({ task }: { task: Task }) {
+  const days = daysRemaining(task.dueDate);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <p className="text-sm font-semibold text-slate-900 leading-snug">{task.name}</p>
+      {task.assignedToName && (
+        <p className="mt-1 text-xs text-slate-500">{task.assignedToName}</p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
+          {priorityLabel[task.priority]}
+        </span>
+        <span
+          className={`text-xs font-medium ${
+            days < 0 ? "text-red-500" : days <= 2 ? "text-amber-500" : "text-slate-400"
+          }`}
+        >
+          {task.dueDate.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DraggableCard({ task, isActive }: { task: Task; isActive: boolean }) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: task.id });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`cursor-grab active:cursor-grabbing transition-opacity ${
+        isActive ? "opacity-40" : "opacity-100"
+      }`}
+    >
+      <KanbanCard task={task} />
+    </div>
+  );
+}
+
+function DroppableColumn({
+  id,
+  label,
+  count,
+  children,
+}: {
+  id: Task["status"];
+  label: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col rounded-2xl border bg-white shadow-sm transition-all ${
+        isOver ? "border-indigo-400 ring-2 ring-indigo-200" : "border-slate-200"
+      }`}
+    >
+      <div className="border-b border-slate-100 px-5 py-3.5">
+        <h3 className="text-sm font-semibold text-slate-700">
+          {label}{" "}
+          <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            {count}
+          </span>
+        </h3>
+      </div>
+      <div className="flex-1 space-y-2 p-3 min-h-[120px]">{children}</div>
+    </div>
+  );
+}
+
+// ── TaskForm type ──
+
 type TaskForm = {
   name: string;
   description: string;
@@ -80,6 +167,8 @@ const emptyForm: TaskForm = {
   progress: 0,
 };
 
+// ── Main component ──
+
 export default function TeamPage() {
   const params = useParams<{ id: string }>();
   const teamId = params?.id ?? "";
@@ -91,7 +180,7 @@ export default function TeamPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
 
-  // Formulario de tarea
+  // Formulario
   const [formOpen, setFormOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [form, setForm] = useState<TaskForm>(emptyForm);
@@ -105,6 +194,12 @@ export default function TeamPage() {
 
   // Copiar código
   const [copied, setCopied] = useState(false);
+
+  // Drag-and-drop
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
 
   const loadData = async () => {
     if (!teamId || !user?.uid) return;
@@ -158,11 +253,7 @@ export default function TeamPage() {
 
   const setMember = (uid: string) => {
     const member = team?.members.find((m) => m.uid === uid);
-    setForm((f) => ({
-      ...f,
-      assignedTo: uid,
-      assignedToName: member?.name ?? "",
-    }));
+    setForm((f) => ({ ...f, assignedTo: uid, assignedToName: member?.name ?? "" }));
   };
 
   const handleSubmit = async (e: { preventDefault(): void }) => {
@@ -189,13 +280,11 @@ export default function TeamPage() {
         progress: form.progress,
         createdBy: user.uid,
       };
-
       if (editingTaskId) {
         await updateTask(teamId, editingTaskId, payload);
       } else {
         await createTask(teamId, payload, user.uid);
       }
-
       setFormOpen(false);
       setEditingTaskId(null);
       setForm(emptyForm);
@@ -207,7 +296,7 @@ export default function TeamPage() {
     }
   };
 
-  const handleDelete = async (taskId: string) => {
+  const handleDeleteTask = async (taskId: string) => {
     try {
       await deleteTask(teamId, taskId);
       await loadData();
@@ -216,14 +305,36 @@ export default function TeamPage() {
     }
   };
 
-  const handleMoveStatus = async (task: Task, newStatus: Task["status"]) => {
+  // ── Drag-and-drop handlers ──
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDragActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setDragActiveId(null);
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const newStatus = over.id as Task["status"];
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || task.status === newStatus) return;
+
+    // Actualización optimista
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+    );
+
     try {
-      await updateTask(teamId, task.id, { status: newStatus });
-      await loadData();
+      await updateTask(teamId, taskId, { status: newStatus });
     } catch {
       setActionError("No fue posible mover la tarea.");
+      await loadData(); // revertir
     }
   };
+
+  const dragActiveTask = dragActiveId ? tasks.find((t) => t.id === dragActiveId) ?? null : null;
 
   // ── Acciones de equipo ──
 
@@ -298,28 +409,14 @@ export default function TeamPage() {
     }));
   }, [tasks]);
 
-  // ── Kanban columns ──
+  const inputClass =
+    "w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
   const kanbanColumns: { key: Task["status"]; label: string }[] = [
     { key: "pending", label: "Pendiente" },
     { key: "in_progress", label: "En progreso" },
     { key: "completed", label: "Completado" },
   ];
-
-  const nextStatus: Record<Task["status"], Task["status"] | null> = {
-    pending: "in_progress",
-    in_progress: "completed",
-    completed: null,
-  };
-
-  const prevStatus: Record<Task["status"], Task["status"] | null> = {
-    pending: null,
-    in_progress: "pending",
-    completed: "in_progress",
-  };
-
-  const inputClass =
-    "w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
   return (
     <main className="space-y-6">
@@ -331,7 +428,6 @@ export default function TeamPage() {
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
           Panel de Control
         </h1>
-
         {actionError && (
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {actionError}
@@ -366,14 +462,17 @@ export default function TeamPage() {
             </h2>
             <button
               type="button"
-              onClick={formOpen ? () => { setFormOpen(false); setEditingTaskId(null); } : openCreate}
+              onClick={
+                formOpen
+                  ? () => { setFormOpen(false); setEditingTaskId(null); }
+                  : openCreate
+              }
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
               {formOpen ? "Cancelar" : "+ Nueva tarea"}
             </button>
           </div>
 
-          {/* Formulario crear/editar */}
           {formOpen && (
             <form
               onSubmit={handleSubmit}
@@ -458,7 +557,10 @@ export default function TeamPage() {
                     max={100}
                     value={form.progress}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, progress: Math.min(100, Math.max(0, Number(e.target.value))) }))
+                      setForm((f) => ({
+                        ...f,
+                        progress: Math.min(100, Math.max(0, Number(e.target.value))),
+                      }))
                     }
                     className={inputClass}
                   />
@@ -469,7 +571,11 @@ export default function TeamPage() {
                     disabled={isSubmitting}
                     className="w-full rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
                   >
-                    {isSubmitting ? "Guardando..." : editingTaskId ? "Guardar cambios" : "Crear tarea"}
+                    {isSubmitting
+                      ? "Guardando..."
+                      : editingTaskId
+                      ? "Guardar cambios"
+                      : "Crear tarea"}
                   </button>
                 </div>
               </div>
@@ -481,7 +587,6 @@ export default function TeamPage() {
             </form>
           )}
 
-          {/* Lista de tareas */}
           {tasksLoading ? (
             <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900" />
@@ -504,9 +609,9 @@ export default function TeamPage() {
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-slate-900">{task.name}</p>
                       {task.description && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">{task.description}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">{task.description}</p>
                       )}
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="mt-0.5 text-xs text-slate-400">
                         {task.assignedToName || "Sin asignar"}
                       </p>
                     </div>
@@ -516,9 +621,14 @@ export default function TeamPage() {
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor[task.status]}`}>
                       {statusLabel[task.status]}
                     </span>
-                    <span className={`text-xs font-medium ${days < 0 ? "text-red-600" : days <= 2 ? "text-amber-600" : "text-slate-500"}`}>
+                    <span
+                      className={`text-xs font-medium ${
+                        days < 0 ? "text-red-600" : days <= 2 ? "text-amber-600" : "text-slate-500"
+                      }`}
+                    >
                       {task.dueDate.toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                      {" "}({days < 0 ? `${Math.abs(days)}d vencida` : days === 0 ? "hoy" : `${days}d`})
+                      {" "}
+                      ({days < 0 ? `${Math.abs(days)}d vencida` : days === 0 ? "hoy" : `${days}d`})
                     </span>
                     <div className="flex gap-1.5">
                       <button
@@ -530,7 +640,7 @@ export default function TeamPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDelete(task.id)}
+                        onClick={() => handleDeleteTask(task.id)}
                         className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
                       >
                         Borrar
@@ -544,7 +654,7 @@ export default function TeamPage() {
         </section>
       )}
 
-      {/* ── TAB: Kanban ── */}
+      {/* ── TAB: Kanban (drag-and-drop) ── */}
       {activeTab === "Kanban" && (
         <section>
           {tasksLoading ? (
@@ -552,61 +662,47 @@ export default function TeamPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900" />
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {kanbanColumns.map((col) => {
-                const colTasks = tasks.filter((t) => t.status === col.key);
-                return (
-                  <div key={col.key} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="border-b border-slate-100 px-5 py-3.5">
-                      <h3 className="text-sm font-semibold text-slate-700">
-                        {col.label}{" "}
-                        <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                          {colTasks.length}
-                        </span>
-                      </h3>
-                    </div>
-                    <div className="space-y-2 p-3">
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {kanbanColumns.map((col) => {
+                  const colTasks = tasks.filter((t) => t.status === col.key);
+                  return (
+                    <DroppableColumn
+                      key={col.key}
+                      id={col.key}
+                      label={col.label}
+                      count={colTasks.length}
+                    >
                       {colTasks.length === 0 ? (
-                        <p className="py-4 text-center text-xs text-slate-400">Sin tareas</p>
+                        <p className="py-6 text-center text-xs text-slate-400">
+                          Arrastra tareas aquí
+                        </p>
                       ) : (
                         colTasks.map((task) => (
-                          <div
+                          <DraggableCard
                             key={task.id}
-                            className="rounded-xl border border-slate-200 bg-slate-50 p-3"
-                          >
-                            <p className="text-sm font-semibold text-slate-900">{task.name}</p>
-                            <p className="mt-1 text-xs text-slate-500">{task.assignedToName || "Sin asignar"}</p>
-                            <div className="mt-2 flex gap-1.5 flex-wrap">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${priorityColor[task.priority]}`}>
-                                {priorityLabel[task.priority]}
-                              </span>
-                              {prevStatus[task.status] && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStatus(task, prevStatus[task.status]!)}
-                                  className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
-                                >
-                                  ← Atrás
-                                </button>
-                              )}
-                              {nextStatus[task.status] && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStatus(task, nextStatus[task.status]!)}
-                                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
-                                >
-                                  Avanzar →
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                            task={task}
+                            isActive={dragActiveId === task.id}
+                          />
                         ))
                       )}
-                    </div>
+                    </DroppableColumn>
+                  );
+                })}
+              </div>
+
+              <DragOverlay dropAnimation={null}>
+                {dragActiveTask ? (
+                  <div className="rotate-1 scale-105 shadow-xl">
+                    <KanbanCard task={dragActiveTask} />
                   </div>
-                );
-              })}
-            </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </section>
       )}
@@ -636,7 +732,6 @@ export default function TeamPage() {
       {/* ── TAB: Miembros ── */}
       {activeTab === "Miembros" && (
         <section className="space-y-4">
-          {/* Código de invitación */}
           {team?.inviteCode && (
             <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
               <div className="flex-1">
@@ -657,7 +752,6 @@ export default function TeamPage() {
             </div>
           )}
 
-          {/* Lista de miembros */}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {!team || team.members.length === 0 ? (
               <p className="p-5 text-sm text-slate-500">No hay miembros cargados.</p>
@@ -696,7 +790,6 @@ export default function TeamPage() {
             )}
           </div>
 
-          {/* Acciones del equipo */}
           <div className="flex flex-wrap gap-3">
             {isAdmin && !confirmDelete && (
               <button

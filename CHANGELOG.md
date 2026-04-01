@@ -1,5 +1,29 @@
 # Changelog — manufactura.app
 
+## [2026-04-01] — Fase 2: Kanban drag-and-drop con @dnd-kit
+
+**Qué se hizo:**
+- Instalada librería `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` (compatibles con React 19, sin conflicto de peer deps).
+- Reemplazados los botones "Avanzar/Atrás" del Kanban por drag-and-drop real usando `DndContext`, `useDraggable` y `useDroppable`.
+- `PointerSensor` con `activationConstraint: { distance: 8 }` para evitar drags accidentales al hacer click.
+- `DragOverlay` muestra una copia flotante de la tarjeta con efecto `rotate-1 scale-105` al arrastrar.
+- La tarjeta original se vuelve semitransparente (`opacity-40`) mientras está siendo arrastrada.
+- Al soltar en una columna distinta: actualización optimista del estado local + `updateTask(..., { status })` para persistir en Firestore. Si falla, revierte recargando desde Firestore.
+- Las columnas resaltan con `ring-2 ring-indigo-200` cuando una tarjeta está sobre ellas (`isOver`).
+
+**Archivos modificados:**
+`app/dashboard/equipos/[id]/page.tsx`, `package.json`, `package-lock.json`.
+
+**Decisión técnica:**
+Se usó `@dnd-kit/core` (no `@dnd-kit/sortable`) porque el reordenamiento dentro de la misma columna no era un requisito. Esto mantiene la implementación simple: cada columna es un único `useDroppable` y cada tarjeta un `useDraggable`.
+
+**Pendiente (Fase 3+):**
+- Reordenamiento de tareas dentro de la misma columna (`@dnd-kit/sortable`).
+- Carpetas/agrupaciones de tareas.
+- Comentarios en tareas.
+- Integración Canvas LMS.
+- PERT dinámico calculado desde tareas de Firestore.
+
 ## [2026-04-01] — Refundación Fase 1: modelo de tareas y navegación
 
 **Qué se hizo:**
