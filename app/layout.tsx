@@ -14,9 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Manufactura App — Plataforma de colaboración para ingeniería",
+  title: "Nexo — Organiza tu equipo. Entrega a tiempo.",
   description:
-    "Organiza equipos universitarios, visualiza cronogramas Gantt, diagramas PERT e Ishikawa. Integración con Canvas LMS.",
+    "Plataforma de organización para equipos universitarios. Kanban, Gantt, calendario y colaboración en un solo lugar.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

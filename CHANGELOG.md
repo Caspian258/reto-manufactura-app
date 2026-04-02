@@ -1,5 +1,28 @@
 # Changelog — manufactura.app
 
+## [2026-04-02] — Identidad visual Nexo
+
+**Qué se hizo:**
+- **Nombre**: la app pasa de "Manufactura App" a **Nexo**.
+- **Metadata** (`app/layout.tsx`): título, descripción y favicon actualizados.
+- **Variables CSS** (`app/globals.css`): agregadas `--nexo-primary`, `--nexo-accent`, `--nexo-light`, `--nexo-dark`, `--nexo-surface`.
+- **Logo SVG** en el sidebar (`app/dashboard/layout.tsx`): tres nodos conectados con los colores primarios de Nexo, junto al nombre y el tagline "Organiza tu equipo".
+- **Landing page** (`app/page.tsx`): badge, título y descripción actualizados al nuevo copy de Nexo.
+- **Favicon** (`public/favicon.svg`): logo de Nexo sobre fondo azul `#185FA5`.
+- **Badges estandarizados** en `equipos/[id]/page.tsx` y `tareas/page.tsx`:
+  - Estado: pending → azul, in_progress → ámbar, completed → verde.
+  - Prioridad: high → rojo, medium → ámbar, low → gris.
+- **README.md**: reemplazado el genérico de Next.js por documentación real del proyecto.
+
+**Archivos modificados:**
+`app/layout.tsx`, `app/globals.css`, `app/dashboard/layout.tsx`, `app/page.tsx`, `app/dashboard/equipos/[id]/page.tsx`, `app/dashboard/tareas/page.tsx`, `README.md`.
+
+**Archivos creados:**
+`public/favicon.svg`.
+
+**Decisión técnica:**
+Las variables CSS de Nexo se definen en `:root` en `globals.css` y están disponibles globalmente, sin necesidad de configuración adicional en Tailwind.
+
 ## [2026-04-02] — Fix: Firestore rules para create e índice compuesto
 
 **Qué se hizo:**

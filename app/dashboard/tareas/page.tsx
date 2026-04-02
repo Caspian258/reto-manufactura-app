@@ -13,9 +13,9 @@ const statusLabel: Record<Task["status"], string> = {
 };
 
 const statusColor: Record<Task["status"], string> = {
-  pending: "bg-slate-100 text-slate-600",
-  in_progress: "bg-blue-100 text-blue-700",
-  completed: "bg-emerald-100 text-emerald-700",
+  pending: "bg-blue-50 text-blue-800",
+  in_progress: "bg-amber-50 text-amber-800",
+  completed: "bg-green-50 text-green-800",
 };
 
 const priorityLabel: Record<Task["priority"], string> = {
@@ -25,8 +25,8 @@ const priorityLabel: Record<Task["priority"], string> = {
 };
 
 const priorityColor: Record<Task["priority"], string> = {
-  high: "bg-red-100 text-red-700",
-  medium: "bg-amber-100 text-amber-700",
+  high: "bg-red-50 text-red-800",
+  medium: "bg-amber-50 text-amber-800",
   low: "bg-slate-100 text-slate-600",
 };
 

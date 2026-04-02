@@ -3,6 +3,12 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  --nexo-primary: #185FA5;
+  --nexo-accent: #378ADD;
+  --nexo-light: #E6F1FB;
+  --nexo-dark: #0C447C;
+  --nexo-surface: #F8FAFB;
 }
 
 @theme inline {

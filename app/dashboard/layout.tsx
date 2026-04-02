@@ -60,10 +60,19 @@ export default function DashboardLayout({
       <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-950 text-slate-100">
         {/* Logo */}
         <div className="border-b border-slate-800 px-6 py-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-            Manufactura
-          </p>
-          <h2 className="mt-1 text-base font-semibold">Consola de Equipos</h2>
+          <div className="flex items-center gap-3">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <circle cx="7" cy="14" r="4" fill="#185FA5"/>
+              <circle cx="21" cy="7" r="4" fill="#378ADD"/>
+              <circle cx="21" cy="21" r="4" fill="#378ADD"/>
+              <line x1="10.5" y1="12.1" x2="17.5" y2="8.9" stroke="#185FA5" strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="10.5" y1="15.9" x2="17.5" y2="19.1" stroke="#185FA5" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <div>
+              <p className="text-base font-semibold leading-tight text-white">Nexo</p>
+              <p className="text-xs text-slate-400">Organiza tu equipo</p>
+            </div>
+          </div>
         </div>
 
         {/* Nav */}

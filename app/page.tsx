@@ -15,17 +15,17 @@ export default function HomePage() {
       <section className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white/90 p-8 shadow-xl backdrop-blur sm:p-10">
         {!user ? (
           <div className="space-y-6 text-center">
-            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-              Plataforma para ingeniería universitaria
+            <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+              Plataforma para equipos universitarios
             </span>
 
             <h1 className="text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-              Organiza tu equipo. Visualiza tu proyecto. Entrega a tiempo.
+              Organiza tu equipo. Entrega a tiempo.
             </h1>
 
             <p className="mx-auto max-w-xl text-pretty text-sm text-slate-600 sm:text-base">
-              Gantt, PERT e Ishikawa integrados con Canvas LMS. Inicia sesión
-              con tu cuenta de Google para comenzar.
+              Kanban, Gantt y calendario integrados para equipos de ingeniería.
+              Inicia sesión con tu cuenta de Google.
             </p>
 
             <div className="flex justify-center">
