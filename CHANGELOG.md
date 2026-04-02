@@ -1,5 +1,25 @@
 # Changelog — manufactura.app
 
+## [2026-04-02] — Rules permisivas temporales (deuda técnica)
+
+**Qué se hizo:**
+- Revertidas las Security Rules a modo permisivo tras confirmar que todas las variantes de rules por `memberIds` bloquean las queries de colección (`getUserTeams`, sidebar).
+- Rule activa: `allow read, write: if request.auth != null` — cualquier usuario autenticado con Google puede leer y escribir.
+
+**Por qué es aceptable temporalmente:**
+- Solo usuarios autenticados con Google pueden acceder (no hay acceso anónimo).
+- La app filtra los datos por `uid` en el cliente — cada usuario ve solo sus equipos.
+- No hay datos sensibles más allá de nombres de tareas y equipos universitarios.
+
+**Deuda técnica — hardening pendiente:**
+Implementar rules granulares por `memberIds` requiere resolver el problema de `resource.data` en queries de colección (`list`). Opciones a investigar con el orquestador:
+1. Usar Firebase Admin SDK en un API Route de Next.js para hacer las queries server-side (bypassa rules, controlado por backend).
+2. Reestructurar el modelo de datos para que cada usuario tenga una colección propia de referencias a equipos.
+3. Usar Firestore `collectionGroup` queries con un índice diferente.
+
+**Archivos modificados:**
+`firestore.rules`.
+
 ## [2026-04-02] — Fix: Firestore rules — separar get y list para queries de colección
 
 **Qué se hizo:**
