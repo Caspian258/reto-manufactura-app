@@ -1,5 +1,24 @@
 # Changelog — manufactura.app
 
+## [2026-04-02] — Fix: Firestore rules para create e índice compuesto
+
+**Qué se hizo:**
+- **Bug 1 — `firestore.rules`**: la regla `allow write` usaba `resource.data.memberIds`, que es `null` durante una creación (el documento aún no existe). Se separó en `allow create` (usa `request.resource.data.memberIds`) y `allow read, update, delete` (usa `resource.data.memberIds`). Esto permite que un usuario autenticado cree un equipo siempre que se incluya a sí mismo en `memberIds`.
+- **Bug 2 — índice compuesto**: la query `getUserTeams()` combina `where("memberIds", "array-contains", ...)` con `orderBy("createdAt", "desc")`, lo que requiere un índice compuesto en Firestore. Creado `firestore.indexes.json` con el índice necesario y referenciado desde `firebase.json`.
+- **Deploy**: `firebase deploy --only firestore` — rules e indexes deployados sin errores. El índice puede tardar 2-5 min en construirse en Firebase.
+
+**Archivos modificados:**
+`firestore.rules`, `firebase.json`.
+
+**Archivos creados:**
+`firestore.indexes.json`.
+
+**Decisión técnica:**
+Separar `allow create` de `allow read, update, delete` es el patrón estándar de Firestore para documentos que deben crearse sin existir previamente. Usar `request.resource` (el documento que se va a escribir) en lugar de `resource` (el documento existente) es la clave.
+
+**Pendiente:**
+Ver entrada de Fase 3 para pendientes de features.
+
 ## [2026-04-01] — Fase 3: Comentarios en tareas
 
 **Qué se hizo:**

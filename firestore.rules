@@ -3,20 +3,27 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Equipos: solo miembros pueden leer y escribir
     match /teams/{teamId} {
-      allow read, write: if request.auth != null
-                         && request.auth.uid in resource.data.memberIds;
+      // Crear: cualquier usuario autenticado puede crear,
+      // pero debe incluirse a sí mismo en memberIds
+      allow create: if request.auth != null
+                    && request.auth.uid in request.resource.data.memberIds;
 
-      // Tareas: heredan la regla del equipo padre
+      // Leer, actualizar, borrar: solo miembros existentes
+      allow read, update, delete: if request.auth != null
+                                  && request.auth.uid in resource.data.memberIds;
+
       match /tasks/{taskId} {
         allow read, write: if request.auth != null
-                           && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)).data.memberIds;
+                           && request.auth.uid in
+                             get(/databases/$(database)/documents/teams/$(teamId))
+                               .data.memberIds;
 
-        // Comentarios: miembros pueden leer y crear; solo el autor puede borrar
         match /comments/{commentId} {
           allow read, create: if request.auth != null
-                              && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)).data.memberIds;
+                              && request.auth.uid in
+                                get(/databases/$(database)/documents/teams/$(teamId))
+                                  .data.memberIds;
           allow delete: if request.auth != null
                         && request.auth.uid == resource.data.authorId;
         }
