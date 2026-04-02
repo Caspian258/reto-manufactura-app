@@ -1,5 +1,19 @@
 # Changelog — manufactura.app
 
+## [2026-04-02] — Fix: Firestore rules — permisos para queries de colección
+
+**Qué se hizo:**
+- Separado `allow read` de `allow update, delete` en la regla de `/teams/{teamId}`.
+- La regla anterior agrupaba `allow read, update, delete` en una sola línea. Aunque la condición es idéntica, Firestore requiere que `allow read` esté declarado de forma independiente para que las queries de colección (`where` + `orderBy`) puedan evaluarse correctamente con `resource.data`.
+- El error "Missing or insufficient permissions" ocurría en `getUserTeams()` y en la carga del sidebar porque ambos ejecutan queries de colección, no lecturas de documento único.
+- El índice compuesto (`memberIds CONTAINS` + `createdAt DESC`) ya estaba desplegado desde el fix anterior — no fue necesario modificarlo.
+
+**Archivos modificados:**
+`firestore.rules`.
+
+**Decisión técnica:**
+En Firestore, una query `where("memberIds", "array-contains", uid)` es válida con `resource.data.memberIds` en la regla de `read` porque el filtro garantiza que solo se devuelven documentos donde el uid ya está en `memberIds`. Firestore evalúa la regla documento a documento contra ese campo. Separar `allow read` es la forma en que el motor de reglas distingue entre acceso de lista y acceso de escritura.
+
 ## [2026-04-02] — Identidad visual Nexo
 
 **Qué se hizo:**
