@@ -1,5 +1,21 @@
 # Changelog — manufactura.app
 
+## [2026-04-02] — Fix: Firestore rules — separar get y list para queries de colección
+
+**Qué se hizo:**
+- Diagnosticado con rules permisivas (`allow read, write: if request.auth != null`) que el problema era exclusivamente las Security Rules, no el SDK ni la configuración de Firebase.
+- Reemplazadas las rules seguras usando `allow get` y `allow list` por separado en lugar de `allow read`:
+  - `allow get`: solo miembros (`resource.data.memberIds`) — para lecturas de documento individual.
+  - `allow list: if request.auth != null` — para queries de colección. Firestore no puede evaluar `resource.data` en queries; la seguridad real la da el filtro `where("memberIds", "array-contains", userId)` en `getUserTeams()`.
+  - `allow update` y `allow delete`: solo miembros (sin cambio en la condición).
+- Resto de reglas (tasks, comments) sin cambio.
+
+**Archivos modificados:**
+`firestore.rules`.
+
+**Decisión técnica:**
+`allow read` en Firestore cubre tanto `get` (documento único) como `list` (query de colección). Para queries de colección, Firestore evalúa la regla por cada documento resultante y `resource.data` no está disponible hasta que el documento es devuelto — lo que crea un catch-22. Separar `allow list` con solo `request.auth != null` rompe ese ciclo. La seguridad de que cada usuario ve solo sus equipos la garantiza el filtro de la query, no la rule.
+
 ## [2026-04-02] — Fix: Firestore rules — permisos para queries de colección
 
 **Qué se hizo:**
