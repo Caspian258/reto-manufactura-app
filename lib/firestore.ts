@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -324,4 +325,117 @@ export async function deleteComment(
   await deleteDoc(
     doc(db, "teams", teamId, "tasks", taskId, "comments", commentId)
   );
+}
+
+// ─────────────────────────────────────────────
+// Availability Polls
+// ─────────────────────────────────────────────
+
+export type AvailabilityPoll = {
+  id: string;
+  teamId: string;
+  title: string;
+  dates: string[];
+  timeStart: string;
+  timeEnd: string;
+  slotMinutes: 30;
+  confirmedSlot: { date: string; time: string } | null;
+  createdBy: string;
+  createdAt?: unknown;
+};
+
+export type AvailabilityResponse = {
+  userId: string;
+  userName: string;
+  slots: string[];
+};
+
+export async function createAvailabilityPoll(
+  teamId: string,
+  poll: Omit<AvailabilityPoll, "id" | "teamId" | "createdAt">
+): Promise<string> {
+  if (!teamId) throw new Error("teamId requerido.");
+  const docRef = await addDoc(
+    collection(db, "teams", teamId, "availability_polls"),
+    { ...poll, teamId, createdAt: serverTimestamp() }
+  );
+  return docRef.id;
+}
+
+export async function getAvailabilityPolls(teamId: string): Promise<AvailabilityPoll[]> {
+  if (!teamId) return [];
+  const q = query(
+    collection(db, "teams", teamId, "availability_polls"),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      teamId,
+      title: data.title ?? "",
+      dates: Array.isArray(data.dates) ? (data.dates as string[]) : [],
+      timeStart: data.timeStart ?? "08:00",
+      timeEnd: data.timeEnd ?? "20:00",
+      slotMinutes: 30 as const,
+      confirmedSlot: data.confirmedSlot ?? null,
+      createdBy: data.createdBy ?? "",
+      createdAt: data.createdAt,
+    };
+  });
+}
+
+export async function saveMyAvailability(
+  teamId: string,
+  pollId: string,
+  userId: string,
+  userName: string,
+  slots: string[]
+): Promise<void> {
+  if (!teamId || !pollId || !userId) throw new Error("Datos inválidos para guardar disponibilidad.");
+  await setDoc(
+    doc(db, "teams", teamId, "availability_polls", pollId, "responses", userId),
+    { userId, userName, slots }
+  );
+}
+
+export async function getPollResponses(
+  teamId: string,
+  pollId: string
+): Promise<AvailabilityResponse[]> {
+  if (!teamId || !pollId) return [];
+  const snapshot = await getDocs(
+    collection(db, "teams", teamId, "availability_polls", pollId, "responses")
+  );
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      userId: (data.userId as string) ?? d.id,
+      userName: (data.userName as string) ?? "Usuario",
+      slots: Array.isArray(data.slots) ? (data.slots as string[]) : [],
+    };
+  });
+}
+
+export async function confirmPollSlot(
+  teamId: string,
+  pollId: string,
+  date: string,
+  time: string
+): Promise<void> {
+  if (!teamId || !pollId) throw new Error("Datos inválidos para confirmar slot.");
+  await updateDoc(
+    doc(db, "teams", teamId, "availability_polls", pollId),
+    { confirmedSlot: { date, time } }
+  );
+}
+
+export async function deletePoll(teamId: string, pollId: string): Promise<void> {
+  if (!teamId || !pollId) throw new Error("Datos inválidos para borrar poll.");
+  const responsesSnap = await getDocs(
+    collection(db, "teams", teamId, "availability_polls", pollId, "responses")
+  );
+  await Promise.all(responsesSnap.docs.map((d) => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, "teams", teamId, "availability_polls", pollId));
 }

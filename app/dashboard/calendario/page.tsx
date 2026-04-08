@@ -2,9 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { getUserTeams, getTeamTasks, Task } from "@/lib/firestore";
+import {
+  getUserTeams,
+  getTeamTasks,
+  getAvailabilityPolls,
+  Task,
+  AvailabilityPoll,
+} from "@/lib/firestore";
 
 type TaskWithTeam = Task & { teamName: string };
+type ConfirmedMeeting = AvailabilityPoll & { teamName: string };
 
 const DAYS_OF_WEEK = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
@@ -34,6 +41,7 @@ const statusLabel: Record<Task["status"], string> = {
 export default function CalendarioPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<TaskWithTeam[]>([]);
+  const [meetings, setMeetings] = useState<ConfirmedMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(() => {
     const d = new Date();
@@ -47,14 +55,26 @@ export default function CalendarioPage() {
       setLoading(true);
       try {
         const fetchedTeams = await getUserTeams(user.uid);
-        const taskArrays = await Promise.all(
-          fetchedTeams.map((t) =>
-            getTeamTasks(t.id).then((tasks) =>
-              tasks.map((task) => ({ ...task, teamName: t.name }))
+        const [taskArrays, pollArrays] = await Promise.all([
+          Promise.all(
+            fetchedTeams.map((t) =>
+              getTeamTasks(t.id).then((tasks) =>
+                tasks.map((task) => ({ ...task, teamName: t.name }))
+              )
             )
-          )
-        );
+          ),
+          Promise.all(
+            fetchedTeams.map((t) =>
+              getAvailabilityPolls(t.id).then((polls) =>
+                polls
+                  .filter((p) => p.confirmedSlot !== null)
+                  .map((p) => ({ ...p, teamName: t.name }))
+              )
+            )
+          ),
+        ]);
         setTasks(taskArrays.flat());
+        setMeetings(pollArrays.flat());
       } finally {
         setLoading(false);
       }
@@ -83,7 +103,20 @@ export default function CalendarioPage() {
     }
   }
 
+  // Agrupar reuniones confirmadas por día del mes actual
+  const meetingsByDay: Record<number, ConfirmedMeeting[]> = {};
+  for (const m of meetings) {
+    if (!m.confirmedSlot) continue;
+    const d = new Date(m.confirmedSlot.date + "T00:00:00");
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate();
+      if (!meetingsByDay[day]) meetingsByDay[day] = [];
+      meetingsByDay[day].push(m);
+    }
+  }
+
   const selectedTasks = selectedDay ? (tasksByDay[selectedDay] ?? []) : [];
+  const selectedMeetings = selectedDay ? (meetingsByDay[selectedDay] ?? []) : [];
 
   const prevMonth = () => {
     setSelectedDay(null);
@@ -154,6 +187,7 @@ export default function CalendarioPage() {
                 return <div key={`blank-${idx}`} className="min-h-[80px] border-b border-r border-slate-100" />;
               }
               const dayTasks = tasksByDay[day] ?? [];
+              const dayMeetings = meetingsByDay[day] ?? [];
               const isSelected = selectedDay === day;
               return (
                 <button
@@ -175,8 +209,15 @@ export default function CalendarioPage() {
                   >
                     {day}
                   </span>
-                  {/* Chips de tareas (máx 3 visibles) */}
+                  {/* Chips de tareas y reuniones */}
                   <div className="mt-1 flex flex-wrap gap-1">
+                    {dayMeetings.slice(0, 2).map((m) => (
+                      <span
+                        key={m.id}
+                        className="h-2 w-2 rounded-full bg-green-500"
+                        title={`${m.title} ${m.confirmedSlot?.time}`}
+                      />
+                    ))}
                     {dayTasks.slice(0, 3).map((t) => (
                       <span
                         key={t.id}
@@ -184,8 +225,10 @@ export default function CalendarioPage() {
                         title={t.name}
                       />
                     ))}
-                    {dayTasks.length > 3 && (
-                      <span className="text-xs text-slate-400">+{dayTasks.length - 3}</span>
+                    {dayTasks.length + dayMeetings.length > 3 && (
+                      <span className="text-xs text-slate-400">
+                        +{dayTasks.length + dayMeetings.length - 3}
+                      </span>
                     )}
                   </div>
                 </button>
@@ -195,18 +238,32 @@ export default function CalendarioPage() {
         )}
       </div>
 
-      {/* Panel de tareas del día seleccionado */}
+      {/* Panel de tareas y reuniones del día seleccionado */}
       {selectedDay !== null && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
-            Tareas del {selectedDay} de {MONTHS[month]}
+            {selectedDay} de {MONTHS[month]}
           </h2>
-          {selectedTasks.length === 0 ? (
+          {selectedMeetings.length === 0 && selectedTasks.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-              Sin tareas con fecha límite este día.
+              Sin eventos este día.
             </div>
           ) : (
             <div className="space-y-2">
+              {selectedMeetings.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-4 rounded-2xl border border-green-200 bg-green-50 px-5 py-3.5 shadow-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-green-900">{m.title}</p>
+                    <p className="text-xs text-green-700">{m.teamName}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-green-600 px-3 py-0.5 text-xs font-semibold text-white">
+                    Reunión {m.confirmedSlot?.time}
+                  </span>
+                </div>
+              ))}
               {selectedTasks.map((task) => (
                 <div
                   key={task.id}

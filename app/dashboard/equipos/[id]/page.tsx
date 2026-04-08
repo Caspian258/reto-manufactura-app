@@ -35,14 +35,15 @@ import {
 } from "@/lib/firestore";
 import { getUserTeams } from "@/lib/firestore";
 import { useAuth } from "@/context/AuthContext";
+import { AvailabilityTab } from "./AvailabilityTab";
 
 const Gantt = dynamic(
   () => import("gantt-task-react").then((mod) => mod.Gantt as ComponentType<any>),
   { ssr: false }
 );
 
-type TeamTab = "Tareas" | "Kanban" | "Gantt" | "Miembros";
-const tabs: TeamTab[] = ["Tareas", "Kanban", "Gantt", "Miembros"];
+type TeamTab = "Tareas" | "Kanban" | "Gantt" | "Miembros" | "Horarios";
+const tabs: TeamTab[] = ["Tareas", "Kanban", "Gantt", "Miembros", "Horarios"];
 
 const priorityLabel: Record<Task["priority"], string> = {
   high: "Alta",
@@ -1018,6 +1019,16 @@ export default function TeamPage() {
             </p>
           )}
         </section>
+      )}
+
+      {/* ── TAB: Horarios ── */}
+      {activeTab === "Horarios" && team && user && (
+        <AvailabilityTab
+          team={team}
+          userId={user.uid}
+          userName={user.displayName || user.email || "Usuario"}
+          isAdmin={isAdmin}
+        />
       )}
     </main>
   );

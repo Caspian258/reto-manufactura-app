@@ -1,5 +1,30 @@
 # Changelog — manufactura.app
 
+## [2026-04-07] — Coordinador de disponibilidad estilo When2meet
+
+**Qué se hizo:**
+- Nuevos tipos `AvailabilityPoll` y `AvailabilityResponse` en `lib/firestore.ts`.
+- Nuevas funciones Firestore: `createAvailabilityPoll`, `getAvailabilityPolls`, `saveMyAvailability`, `getPollResponses`, `confirmPollSlot`, `deletePoll`.
+- Nuevo componente `app/dashboard/equipos/[id]/AvailabilityTab.tsx` con: grilla interactiva de disponibilidad (drag-select con mouse nativo), heatmap del equipo con tooltip, confirmación de slot (admin), formulario de creación con selector de días (próximas 3 semanas).
+- Pestaña "Horarios" agregada como quinta pestaña en `app/dashboard/equipos/[id]/page.tsx`.
+- Calendario (`app/dashboard/calendario/page.tsx`) carga polls confirmados de todos los equipos y los muestra como chips verdes diferenciados de los chips de tareas.
+
+**Archivos modificados:**
+- `lib/firestore.ts` — tipos y 6 funciones nuevas, import `setDoc`
+- `app/dashboard/equipos/[id]/AvailabilityTab.tsx` — nuevo componente
+- `app/dashboard/equipos/[id]/page.tsx` — pestaña Horarios
+- `app/dashboard/calendario/page.tsx` — chips de reuniones confirmadas
+
+**Decisión técnica:**
+- Grilla de disponibilidad implementada con `<table>` y mouse events nativos (`onMouseDown`, `onMouseEnter` + `window.addEventListener("mouseup")`) sin librerías externas.
+- Slots guardados como strings `"YYYY-MM-DDTHH:MM"` sin timezone para evitar conversiones.
+- `AvailabilityTab` creado como componente separado dado que la página ya tenía ~1025 líneas y el feature agrega ~500 líneas más.
+- `deletePoll` elimina primero la subcolección `responses` antes de borrar el documento padre (Firestore no borra subcollections automáticamente).
+
+**Pendiente:**
+- Actualizar Firestore Security Rules para permitir lectura/escritura en `availability_polls` y su subcolección `responses`.
+
+
 ## [2026-04-02] — Rules permisivas temporales (deuda técnica)
 
 **Qué se hizo:**
