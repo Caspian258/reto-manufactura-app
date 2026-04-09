@@ -64,14 +64,16 @@ export default function DashboardPage() {
     })();
   }, [user?.uid]);
 
-  const myTasks = allTasks.filter((t) => t.assignedTo === user?.uid);
-  const pendingCount = myTasks.filter((t) => t.status === "pending").length;
-  const inProgressCount = myTasks.filter((t) => t.status === "in_progress").length;
-  const completedWeekCount = myTasks.filter(
+  const relevantes = allTasks.filter(
+    (t) => t.assignedTo === user?.uid || !t.assignedTo
+  );
+  const pendingCount = relevantes.filter((t) => t.status === "pending").length;
+  const inProgressCount = relevantes.filter((t) => t.status === "in_progress").length;
+  const completedWeekCount = relevantes.filter(
     (t) => t.status === "completed" && isThisWeek(t.dueDate)
   ).length;
 
-  const upcoming = [...myTasks]
+  const upcoming = [...relevantes]
     .filter((t) => t.status !== "completed")
     .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
     .slice(0, 5);
@@ -89,9 +91,9 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           { label: "Equipos", value: loading ? "—" : teams.length, href: "/dashboard/equipos" },
-          { label: "Pendientes", value: loading ? "—" : pendingCount, href: "/dashboard/tareas" },
-          { label: "En progreso", value: loading ? "—" : inProgressCount, href: "/dashboard/tareas" },
-          { label: "Completadas esta semana", value: loading ? "—" : completedWeekCount, href: "/dashboard/tareas" },
+          { label: "Pendientes", value: loading ? "—" : pendingCount, href: "/dashboard/tareas?filter=mine" },
+          { label: "En progreso", value: loading ? "—" : inProgressCount, href: "/dashboard/tareas?filter=mine" },
+          { label: "Completadas esta semana", value: loading ? "—" : completedWeekCount, href: "/dashboard/tareas?filter=mine" },
         ].map((card) => (
           <Link
             key={card.label}
@@ -123,7 +125,7 @@ export default function DashboardPage() {
           </div>
         ) : upcoming.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            No tienes tareas pendientes asignadas.
+            No tienes tareas pendientes próximas
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

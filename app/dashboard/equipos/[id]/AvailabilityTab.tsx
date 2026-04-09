@@ -164,13 +164,14 @@ function AvailabilityGrid({
 
 // ── HeatmapGrid (read-only) ───────────────────
 
-function heatmapBg(count: number, total: number): string {
-  if (total === 0 || count === 0) return "#ffffff";
-  const pct = count / total;
-  if (pct >= 1) return "#0C447C";
-  if (pct >= 0.67) return "#185FA5";
-  if (pct >= 0.34) return "#378ADD";
-  return "#E6F1FB";
+function getHeatmapColor(disponibles: number, total: number): string {
+  if (total === 0 || disponibles === 0) return "#F8FAFB";
+  const ratio = disponibles / total;
+  if (ratio <= 0.25) return "#E6F1FB";
+  if (ratio <= 0.50) return "#B5D4F4";
+  if (ratio <= 0.75) return "#378ADD";
+  if (ratio < 1.00) return "#185FA5";
+  return "#0C447C";
 }
 
 function HeatmapGrid({
@@ -232,10 +233,7 @@ function HeatmapGrid({
                 const names = countMap[key] ?? [];
                 const count = names.length;
                 const isConfirmed = confirmedKey === key;
-                const tooltip =
-                  count === 0
-                    ? "0 disponibles"
-                    : `${count} de ${memberCount} disponibles: ${names.join(", ")}`;
+                const tooltip = `${count} de ${memberCount} disponibles${names.length > 0 ? `: ${names.join(", ")}` : ""}`;
                 return (
                   <td key={date} className="px-0.5 py-0.5">
                     <div
@@ -245,7 +243,7 @@ function HeatmapGrid({
                         isAdmin ? "cursor-pointer hover:opacity-75" : ""
                       }`}
                       style={{
-                        backgroundColor: heatmapBg(count, memberCount),
+                        backgroundColor: getHeatmapColor(count, memberCount),
                         outline: isConfirmed
                           ? "2px solid #16a34a"
                           : count === memberCount && memberCount > 0

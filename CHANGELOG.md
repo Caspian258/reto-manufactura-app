@@ -1,5 +1,26 @@
 # Changelog — manufactura.app
 
+## [2026-04-08] — Filtro de tareas relevantes, colapsar completadas y heatmap proporcional
+
+**Qué se hizo:**
+- Dashboard muestra solo tareas relevantes: asignadas al usuario actual o sin asignar (`!assignedTo`). Las 4 tarjetas de resumen y la lista "Mis tareas próximas" usan este criterio.
+- Tarjetas del dashboard enlazan a `/dashboard/tareas?filter=mine`.
+- En `/dashboard/tareas` y en la pestaña Tareas de cada equipo, las tareas completadas se ocultan al fondo bajo un botón colapsable ("▶ N tareas completadas") con nombre tachado y opacidad reducida.
+- `?filter=mine` en la URL de tareas activa automáticamente el filtro de responsable = usuario actual (vía `useSearchParams`).
+- Heatmap del when2meet usa escala proporcional de 5 colores según ratio disponibles/total_miembros. Tooltip actualizado a "N de M disponibles: Nombre1, ...".
+
+**Archivos modificados:**
+- `app/dashboard/page.tsx` — filtro `relevantes`, hrefs con `?filter=mine`, mensaje vacío
+- `app/dashboard/tareas/page.tsx` — reescritura con `useSearchParams`, filtro responsable, sección colapsable
+- `app/dashboard/equipos/[id]/page.tsx` — estado `completedOpen`, split activas/completadas en tab Tareas
+- `app/dashboard/equipos/[id]/AvailabilityTab.tsx` — `getHeatmapColor` con 5 rangos, tooltip actualizado
+
+**Decisión técnica:**
+- `useSearchParams` requiere `<Suspense>` en Next.js 16; se separó `TareasContent` del export default para cumplirlo.
+- Las tareas completadas mantienen el acordeón y comentarios dentro del colapsable para no perder funcionalidad.
+
+**Pendiente:** Hardening de reglas Firestore.
+
 ## [2026-04-07] — Coordinador de disponibilidad estilo When2meet
 
 **Qué se hizo:**
